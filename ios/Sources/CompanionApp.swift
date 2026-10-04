@@ -174,7 +174,7 @@ struct HomeView: View {
                         .glassSurface(in: RoundedRectangle(cornerRadius: 22))
                 }
             }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background { GlassWallpaper() }.toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
+        }.background { GlassWallpaper() }.navigationTitle("小家").toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
             .sheet(isPresented: $moodSheet) { moodEditor }
             .sheet(isPresented: $noteSheet) { noteEditor }
             .sheet(isPresented: $timeline) { moodTimeline }

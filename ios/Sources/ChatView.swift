@@ -126,7 +126,6 @@ struct ChatView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         }
-        .accessibilityIdentifier("chat-screen")
         .simultaneousGesture(DragGesture(minimumDistance: 25).onEnded { value in
             // Also support a leftward back gesture from the right edge, without
             // taking over scrolling or the native left-edge interactive pop.
@@ -250,6 +249,7 @@ struct ChatView: View {
                         Text("想说什么，回车就好").font(.body).foregroundStyle(Color(uiColor: .secondaryLabel)).allowsHitTesting(false)
                     }
                     ReturnComposer(text: $draft, focused: $focused, canSend: canSend, onSend: sendDraft)
+                        .accessibilityIdentifier("chat-composer")
                 }.padding(.horizontal, 17).padding(.vertical, 2)
                     .glassSurface(in: RoundedRectangle(cornerRadius: 25, style: .continuous))
             }.padding(.horizontal, 16).padding(.bottom, 8).padding(.top, replyingTo == nil ? 10 : 0)

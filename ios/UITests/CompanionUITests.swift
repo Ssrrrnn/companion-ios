@@ -69,10 +69,12 @@ final class CompanionUITests: XCTestCase {
         start.press(forDuration: 0.1, thenDragTo: end)
         let chat = app.buttons["聊天"]
         XCTAssertTrue(chat.waitForExistence(timeout: 5))
+        app.buttons["珍藏"].tap()
         chat.tap()
         XCTAssertTrue(app.buttons["搜索聊天"].waitForExistence(timeout: 5))
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.45))
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.45)))
         XCTAssertTrue(chat.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["留给我们的"].exists)
     }
 }

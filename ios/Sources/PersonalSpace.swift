@@ -127,8 +127,9 @@ struct CompanionAvatar: View {
             if let image = space.avatar { Image(uiImage: image).resizable().scaledToFill() }
             else {
                 ZStack {
-                    Circle().fill(Color(red: 0.86, green: 0.79, blue: 0.75))
-                    Text(String(name.prefix(1))).font(.system(size: size * 0.43, weight: .medium, design: .serif)).foregroundStyle(Color(red: 0.34, green: 0.23, blue: 0.25))
+                    Circle().fill(.ultraThinMaterial)
+                        .overlay(Circle().fill(homeAccent.opacity(0.16)))
+                    Text(String(name.prefix(1))).font(.system(size: size * 0.43, weight: .medium, design: .serif)).foregroundStyle(Color.primary)
                 }
             }
         }.frame(width: size, height: size).clipShape(Circle()).accessibilityLabel("\(name)的头像")
