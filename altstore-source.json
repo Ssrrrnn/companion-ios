@@ -16,6 +16,15 @@
       "category": "lifestyle",
       "versions": [
         {
+          "version": "0.5.0",
+          "buildVersion": "14.1",
+          "minOSVersion": "18.0",
+          "size": 734618,
+          "localizedDescription": "0.5.0 · 我们的日历与手机权限\n\n双方心情与小记独立保存到共享月历，不再默认发送聊天。原有心情记录会迁移，断网时保留并稍后同步。\n伴侣可通过真实工具读取共享记录、保存自己的心情，以及读取你授权同步的电量、充电状态和所选日历未来30天的标题、时间。\n授权自动添加后，伴侣可创建手机日历日程；手机返回保存回执才会显示成功，待执行与失败分别标注。\n更新后在小家或设置进入「他的手机权限」开启所需功能，并完成系统日历授权。App需在前台接收日程任务；关闭时排队，不能保证锁屏即时执行。\n未接入健康、相册、通讯录、定位或其他App私聊。没有新增服务费用。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.5.0-build14.1/Companion.ipa",
+          "date": "2026-10-04T19:27:41Z"
+        },
+        {
           "version": "0.4.0",
           "buildVersion": "13.1",
           "minOSVersion": "18.0",
