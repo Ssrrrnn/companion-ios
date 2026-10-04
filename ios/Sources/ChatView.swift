@@ -93,7 +93,7 @@ struct ChatView: View {
                                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                                 Button("重试") { Task { await model.retry() } }
                                 Button("保留为草稿") {
-                                    if draft.isEmpty { draft = QuotedText(pending.text).body }
+                                    draft = [QuotedText(pending.text).body, draft].filter { !$0.isEmpty }.joined(separator: "\n")
                                     model.discardPending()
                                 }
                             }

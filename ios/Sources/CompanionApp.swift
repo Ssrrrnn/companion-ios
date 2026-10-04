@@ -137,7 +137,7 @@ struct HomeView: View {
                         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
                 }
             }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background(homePaper).toolbar(.hidden, for: .navigationBar)
+        }.background(homePaper).toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
             .sheet(isPresented: $moodSheet) { moodEditor }
             .sheet(isPresented: $noteSheet) { noteEditor }
             .sheet(isPresented: $timeline) { moodTimeline }
@@ -243,7 +243,7 @@ struct KeepsakesView: View {
                 }.padding(.horizontal, 20).padding(.bottom, 24).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.refreshable { await model.loadKeepsakes() }
             if let error = model.error { Text(error).font(.caption).foregroundStyle(.red).padding() }
-        }.background(homePaper).navigationTitle("留给我们的")
+        }.background(homePaper).navigationTitle("留给我们的").toolbar(.visible, for: .tabBar)
             .task { if model.connected { await model.loadKeepsakes() } }
     }
     private func keepsakeCard(_ text: String, label: String) -> some View {

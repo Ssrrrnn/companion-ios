@@ -32,6 +32,11 @@ struct SettingsView: View {
             } header: { Text("我们的小家") }
             Section("我们的纪念日") {
                 Toggle("记住相遇的日子", isOn: $anniversaryEnabled)
+                    .onChange(of: anniversaryEnabled) { _, enabled in
+                        if enabled && UserDefaults.standard.object(forKey: "anniversary_date") == nil {
+                            anniversary = Date.now.timeIntervalSince1970
+                        }
+                    }
                 if anniversaryEnabled {
                     DatePicker("纪念日", selection: Binding(get: { Date(timeIntervalSince1970: anniversary) }, set: { anniversary = $0.timeIntervalSince1970 }), in: ...Date.now, displayedComponents: .date)
                 }
@@ -73,7 +78,7 @@ struct SettingsView: View {
                 Text("主动消息继续通过 QQ 或 Telegram 到达，打开小家可以同步查看聊天。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-        }.navigationTitle("设置")
+        }.navigationTitle("设置").toolbar(.visible, for: .tabBar)
             .onChange(of: avatarItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: false) } } }
             .onChange(of: wallpaperItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: true) } } }
     }
