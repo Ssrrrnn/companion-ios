@@ -29,8 +29,22 @@ jobs:
           name: Companion-unsigned
           path: ios/build/Companion.ipa
           retention-days: 1
+  preview:
+    if: github.event.repository.private == false
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - run: brew install xcodegen
+      - run: bash ios/preview.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: Companion-UI-previews
+          path: ios/build/previews/
+          retention-days: 7
   publish:
-    needs: build
+    needs: [build, preview]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
