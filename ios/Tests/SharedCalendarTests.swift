@@ -2,6 +2,11 @@ import XCTest
 @testable import Companion
 
 final class SharedCalendarTests: XCTestCase {
+    func testBuiltAppContainsCalendarPermissionDescription() {
+        let description = Bundle.main.object(forInfoDictionaryKey: "NSCalendarsFullAccessUsageDescription") as? String
+        XCTAssertNotNil(description)
+        XCTAssertFalse(description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
     func testMonthGridPreservesLeapDayAndMondayAlignment() throws {
         let month = try XCTUnwrap(SharedDates.parse("2024-02-01"))
         let cells = SharedDates.cells(month)
