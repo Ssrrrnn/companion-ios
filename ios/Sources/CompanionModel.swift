@@ -79,6 +79,10 @@ final class CompanionModel: ObservableObject {
         return true
     }
     func retry() async {
+        #if DEBUG
+        // UI fixtures must never send synthetic messages to a real service.
+        guard !isPreview else { return }
+        #endif
         guard let request = pending, !sending else { return }
         sending = true
         error = nil

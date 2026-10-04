@@ -11,6 +11,9 @@ struct SettingsView: View {
     @AppStorage("chat_palette") private var palette = "blue"
     @AppStorage("chat_haptics") private var haptics = true
     @AppStorage("app_appearance") private var appearance = "system"
+    @AppStorage("wallpaper_style") private var wallpaperStyle = "mist"
+    @AppStorage("wallpaper_shade") private var wallpaperShade = 0.12
+    @AppStorage("wallpaper_blur") private var wallpaperBlur = 0.0
     @State private var base = UserDefaults.standard.string(forKey: "server_url") ?? ""
     @State private var token = ConnectionKey.read()
     @State private var connecting = false
@@ -48,13 +51,26 @@ struct SettingsView: View {
                 Picker("外观", selection: $appearance) {
                     Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
                 }
-                PhotosPicker("选择聊天壁纸", selection: $wallpaperItem, matching: .images)
+                Picker("内置背景", selection: $wallpaperStyle) {
+                    ForEach(WallpaperStyle.allCases) { item in Text(item.title).tag(item.rawValue) }
+                }.pickerStyle(.segmented)
+                PhotosPicker("从相册更换背景壁纸", selection: $wallpaperItem, matching: .images)
                 if space.wallpaper != nil {
                     HStack {
                         Image(uiImage: space.wallpaper!).resizable().scaledToFill().frame(width: 44, height: 60).clipped().clipShape(RoundedRectangle(cornerRadius: 7))
-                        Text("已经设置聊天壁纸").font(.caption).foregroundStyle(.secondary)
+                        Text("首页和聊天共用这张壁纸").font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("移除") { space.removeImage(wallpaper: true) }
+                        Button("恢复内置背景") { space.removeImage(wallpaper: true) }
+                    }
+                }
+                if space.wallpaper != nil {
+                    VStack(alignment: .leading) {
+                        Text("壁纸遮罩").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $wallpaperShade, in: 0...0.65).accessibilityLabel("壁纸遮罩")
+                    }
+                    VStack(alignment: .leading) {
+                        Text("壁纸模糊").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: $wallpaperBlur, in: 0...16).accessibilityLabel("壁纸模糊")
                     }
                 }
                 Toggle("轻触反馈", isOn: $haptics)
@@ -78,7 +94,8 @@ struct SettingsView: View {
                 Text("主动消息继续通过 QQ 或 Telegram 到达，打开小家可以同步查看聊天。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-        }.navigationTitle("设置").toolbar(.visible, for: .tabBar)
+        }.scrollContentBackground(.hidden).background { GlassWallpaper() }
+            .navigationTitle("设置").toolbarBackground(.hidden, for: .navigationBar)
             .onChange(of: avatarItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: false) } } }
             .onChange(of: wallpaperItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: true) } } }
     }

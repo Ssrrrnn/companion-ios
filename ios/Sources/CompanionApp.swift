@@ -22,6 +22,7 @@ struct CompanionApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
                         model.isPreview = true
                         model.connected = true
+                        model.discardPending()
                         model.messages = [
                             Message(id: "preview:1", role: "assistant", text: "忙完了？过来，让我看看你。"),
                             Message(id: "preview:2", role: "user", text: "今天有点累，想赖在你这里。"),
@@ -42,26 +43,59 @@ struct CompanionApp: App {
 
 struct CompanionTabs: View {
     @State private var selection = 0
+    @State private var path: [CompanionRoute] = []
+    private var navigationSelection: Binding<Int> {
+        Binding(get: { selection }, set: { value in
+            if value == 1 {
+                if path.isEmpty { path.append(.chat) }
+            } else {
+                path.removeAll(); selection = value
+            }
+        })
+    }
     var body: some View {
-        TabView(selection: $selection) {
-            NavigationStack { HomeView(selection: $selection) }
-                .tabItem { Label("小家", systemImage: "house") }.tag(0)
-            NavigationStack { ChatView(selection: $selection) }.tint(.blue)
-                .tabItem { Label("聊天", systemImage: "bubble.left.and.bubble.right") }.tag(1)
-            NavigationStack { KeepsakesView() }
-                .tabItem { Label("珍藏", systemImage: "heart.text.square") }.tag(2)
-            NavigationStack { SettingsView() }
-                .tabItem { Label("设置", systemImage: "slider.horizontal.3") }.tag(3)
+        NavigationStack(path: $path) {
+            Group {
+                if selection == 2 { KeepsakesView() }
+                else if selection == 3 { SettingsView() }
+                else { HomeView(selection: navigationSelection) }
+            }
+            .background { GlassWallpaper() }
+            .safeAreaInset(edge: .bottom, spacing: 0) { dock }
+            .navigationDestination(for: CompanionRoute.self) { _ in
+                ChatView(selection: navigationSelection, onBack: { if !path.isEmpty { path.removeLast() } })
+            }
         }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
-                selection = ProcessInfo.processInfo.arguments.contains("--home") ? 0 : 1
+                if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
             }
             #endif
         }
     }
+    private var dock: some View {
+        HStack(spacing: 3) {
+            dockItem("小家", icon: "house", tag: 0)
+            dockItem("聊天", icon: "bubble.left.and.bubble.right", tag: 1)
+            dockItem("珍藏", icon: "heart.text.square", tag: 2)
+            dockItem("设置", icon: "slider.horizontal.3", tag: 3)
+        }.padding(7).glassSurface(in: Capsule())
+            .frame(maxWidth: 420).padding(.horizontal, 28).padding(.bottom, 8).padding(.top, 10)
+    }
+    private func dockItem(_ title: String, icon: String, tag: Int) -> some View {
+        Button { navigationSelection.wrappedValue = tag } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 19, weight: selection == tag ? .semibold : .regular))
+                Text(title).font(.caption2.weight(.medium))
+            }.foregroundStyle(selection == tag ? homeAccent : Color.primary.opacity(0.65))
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .background(selection == tag ? Color.white.opacity(0.16) : .clear, in: Capsule())
+        }.buttonStyle(.plain).accessibilityLabel(title)
+    }
 }
+
+enum CompanionRoute: Hashable { case chat }
 
 struct HomeView: View {
     @EnvironmentObject private var model: CompanionModel
@@ -102,10 +136,10 @@ struct HomeView: View {
                     Text(caption).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                     Button { selection = model.connected ? 1 : 3 } label: {
                         HStack { Text(model.connected ? "去找\(name)" : "连接我们的小家"); Spacer(); Image(systemName: "arrow.up.right") }
-                            .font(.body.weight(.semibold)).padding(16).foregroundStyle(.white)
-                            .background(homeWine, in: RoundedRectangle(cornerRadius: 16))
+                            .font(.body.weight(.semibold)).padding(16).foregroundStyle(Color.primary)
+                            .glassSurface(in: RoundedRectangle(cornerRadius: 18), tint: homeAccent)
                     }
-                }.padding(24).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 26))
+                }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
                 if let last = model.messages.last(where: { $0.role == "assistant" }) {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("\(name)留下的话", systemImage: "quote.opening").font(.caption).foregroundStyle(.secondary)
@@ -125,7 +159,7 @@ struct HomeView: View {
                     Button {
                         moodEmoji = space.todayMood?.emoji ?? "🤍"; moodNote = space.todayMood?.note ?? ""; moodSheet = true
                     } label: { Image(systemName: "pencil").padding(10).background(homeWine.opacity(0.08), in: Circle()) }.accessibilityLabel("记录今天的心情")
-                }.padding(18).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+                }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 HStack { Text("留给我们的").font(.headline); Spacer(); Button("全部") { selection = 2 }.font(.subheadline) }
                 HStack(spacing: 12) {
                     homeTile("日记与珍藏", subtitle: "那些舍不得忘记的瞬间", icon: "heart.text.square") { selection = 2 }
@@ -137,10 +171,10 @@ struct HomeView: View {
                         Text(note.text).font(.subheadline).lineSpacing(4).lineLimit(4)
                         Text(note.date, format: .dateTime.month().day()).font(.caption2).foregroundStyle(.tertiary)
                     }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+                        .glassSurface(in: RoundedRectangle(cornerRadius: 22))
                 }
             }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background(homePaper).toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
+        }.background { GlassWallpaper() }.toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
             .sheet(isPresented: $moodSheet) { moodEditor }
             .sheet(isPresented: $noteSheet) { noteEditor }
             .sheet(isPresented: $timeline) { moodTimeline }
@@ -152,7 +186,7 @@ struct HomeView: View {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }.frame(maxWidth: .infinity, minHeight: 106, alignment: .leading).padding(18)
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+                .glassSurface(in: RoundedRectangle(cornerRadius: 24))
         }.buttonStyle(.plain)
     }
     private var moodEditor: some View {
@@ -246,7 +280,7 @@ struct KeepsakesView: View {
                 }.padding(.horizontal, 20).padding(.bottom, 24).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.refreshable { await model.loadKeepsakes() }
             if let error = model.error { Text(error).font(.caption).foregroundStyle(.red).padding() }
-        }.background(homePaper).navigationTitle("留给我们的").toolbar(.visible, for: .tabBar)
+        }.background { GlassWallpaper() }.navigationTitle("留给我们的").toolbar(.visible, for: .tabBar)
             .task { if model.connected { await model.loadKeepsakes() } }
     }
     private func keepsakeCard(_ text: String, label: String) -> some View {
@@ -255,6 +289,6 @@ struct KeepsakesView: View {
             Text(text).lineSpacing(6).textSelection(.enabled)
             ShareLink(item: text) { Label("分享", systemImage: "square.and.arrow.up").font(.caption) }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+            .glassSurface(in: RoundedRectangle(cornerRadius: 26))
     }
 }

@@ -21,41 +21,6 @@ struct QuotedText {
     }
 }
 
-struct MessageBubbleShape: Shape {
-    var outgoing: Bool
-    var tail: Bool
-    func path(in rect: CGRect) -> Path {
-        let bodyWidth = rect.width - (tail ? 7 : 0)
-        let radius = min(CGFloat(20), rect.height / 2, bodyWidth / 2)
-        let height = rect.height
-        // A single outline avoids overlapping subpaths cutting holes in the fill.
-        var path = Path()
-        path.move(to: CGPoint(x: radius, y: 0))
-        path.addLine(to: CGPoint(x: bodyWidth - radius, y: 0))
-        path.addQuadCurve(to: CGPoint(x: bodyWidth, y: radius), control: CGPoint(x: bodyWidth, y: 0))
-        path.addLine(to: CGPoint(x: bodyWidth, y: height - radius))
-        if tail {
-            path.addCurve(to: CGPoint(x: rect.width, y: height),
-                          control1: CGPoint(x: bodyWidth, y: height - 5),
-                          control2: CGPoint(x: rect.width - 7, y: height - 1))
-            path.addCurve(to: CGPoint(x: bodyWidth - 15, y: height - 5),
-                          control1: CGPoint(x: rect.width - 10, y: height),
-                          control2: CGPoint(x: bodyWidth - 10, y: height - 2))
-            path.addQuadCurve(to: CGPoint(x: max(radius, bodyWidth - 28), y: height),
-                              control: CGPoint(x: bodyWidth - 20, y: height))
-        } else {
-            path.addQuadCurve(to: CGPoint(x: bodyWidth - radius, y: height),
-                              control: CGPoint(x: bodyWidth, y: height))
-        }
-        path.addLine(to: CGPoint(x: radius, y: height))
-        path.addQuadCurve(to: CGPoint(x: 0, y: height - radius), control: CGPoint(x: 0, y: height))
-        path.addLine(to: CGPoint(x: 0, y: radius))
-        path.addQuadCurve(to: CGPoint(x: radius, y: 0), control: CGPoint(x: 0, y: 0))
-        path.closeSubpath()
-        return outgoing ? path : path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.width, ty: 0))
-    }
-}
-
 struct ChatView: View {
     @EnvironmentObject private var model: CompanionModel
     @EnvironmentObject private var space: PersonalSpace
@@ -63,10 +28,10 @@ struct ChatView: View {
     @AppStorage("chat_palette") private var paletteName = "blue"
     @AppStorage("chat_draft_v1") private var draft = ""
     @AppStorage("chat_haptics") private var haptics = true
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: Int
-    @FocusState private var focused: Bool
+    var onBack: () -> Void
+    @State private var focused = false
     @State private var replyingTo: Message?
     @State private var profile = false
     @State private var searching = false
@@ -76,6 +41,7 @@ struct ChatView: View {
     @State private var unseen = false
     @State private var width: CGFloat = 390
     private var palette: ChatPalette { ChatPalette(rawValue: paletteName) ?? .blue }
+    private var pieces: [ChatPiece] { model.messages.flatMap(ChatPiece.make) }
     private var composed: String { QuotedText.compose(draft, replyingTo: replyingTo, name: name) }
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && composed.count <= 4000 && model.pending == nil && !model.sending && model.connected
@@ -95,13 +61,13 @@ struct ChatView: View {
                             if !model.connected { Button("去设置") { selection = 3 }.buttonStyle(.bordered) }
                         }.padding(.vertical, 50).frame(maxWidth: .infinity)
                     }
-                    ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
-                        let tail = index == model.messages.count - 1 || model.messages[index + 1].role != message.role
-                        let gap: CGFloat = index == 0 || model.messages[index - 1].role != message.role ? 11 : 3
-                        bubble(message, tail: tail).padding(.top, gap).id(message.id)
+                    ForEach(Array(pieces.enumerated()), id: \.element.id) { index, piece in
+                        let gap: CGFloat = index == 0 || pieces[index - 1].source.role != piece.source.role ? 14 : 7
+                        bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil)
+                            .padding(.top, gap).id(piece.anchor)
                     }
                     if let pending = model.pending {
-                        bubble(Message(id: pending.id.uuidString, role: "user", text: pending.text), tail: true)
+                        bubble(Message(id: pending.id.uuidString, role: "user", text: pending.text))
                             .padding(.top, 12)
                         HStack {
                             Spacer()
@@ -120,7 +86,7 @@ struct ChatView: View {
                                 HStack(spacing: 5) {
                                     ProgressView().controlSize(.mini)
                                     Text("正在回复").font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel))
-                                }.padding(14).background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                                }.padding(14).glassSurface(in: Capsule())
                                 Spacer()
                             }.padding(.top, 16).accessibilityLabel("正在等待回复")
                         }
@@ -160,15 +126,18 @@ struct ChatView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { focused = false; selection = 0 } label: { Image(systemName: "chevron.left").font(.title3.weight(.medium)) }
-                    .accessibilityLabel("回到小家")
+        .accessibilityIdentifier("chat-screen")
+        .simultaneousGesture(DragGesture(minimumDistance: 25).onEnded { value in
+            // Also support a leftward back gesture from the right edge, without
+            // taking over scrolling or the native left-edge interactive pop.
+            if value.startLocation.x > width - 32 && value.translation.width < -70 && abs(value.translation.height) < 50 {
+                focused = false; onBack()
             }
+        })
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
             ToolbarItem(placement: .principal) {
                 Button { focused = false; profile = true } label: {
                     HStack(spacing: 8) {
@@ -179,11 +148,13 @@ struct ChatView: View {
                                 .font(.caption2).foregroundStyle(Color(uiColor: .secondaryLabel))
                         }
                         Image(systemName: "chevron.down").font(.caption2).foregroundStyle(Color(uiColor: .tertiaryLabel))
-                    }
+                    }.padding(.horizontal, 13).padding(.vertical, 6).glassSurface(in: Capsule())
                 }.accessibilityLabel("查看\(name)的资料")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { focused = false; searching = true } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("搜索聊天")
+                Button { focused = false; searching = true } label: {
+                    Image(systemName: "magnifyingglass").frame(width: 38, height: 38).glassSurface(in: Circle())
+                }.accessibilityLabel("搜索聊天")
             }
         }
         .sheet(isPresented: $profile) {
@@ -200,15 +171,8 @@ struct ChatView: View {
     private func jumpToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
     }
-    @ViewBuilder private var chatBackground: some View {
-        if let image = space.wallpaper {
-            GeometryReader { geometry in
-                Image(uiImage: image).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped()
-                    .overlay(Color(uiColor: .systemBackground).opacity(colorScheme == .dark ? 0.60 : 0.78))
-            }.ignoresSafeArea()
-        } else { Color(uiColor: .systemBackground).ignoresSafeArea() }
-    }
-    private func bubble(_ message: Message, tail: Bool) -> some View {
+    private var chatBackground: some View { GlassWallpaper() }
+    private func bubble(_ message: Message, voiceID: String? = nil) -> some View {
         let outgoing = message.role == "user"
         let content = QuotedText(message.text)
         return HStack(alignment: .bottom, spacing: 0) {
@@ -221,13 +185,13 @@ struct ChatView: View {
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         .background(outgoing ? Color.white.opacity(0.15) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
-                if model.hasAudio(message.id) { audioBar(message.id, outgoing: outgoing) }
+                if let voiceID, model.hasAudio(voiceID) { audioBar(voiceID, outgoing: outgoing) }
                 Text(content.body).font(.body).lineSpacing(3)
                 if space.isSaved(message.id) { Image(systemName: "heart.fill").font(.caption2).opacity(0.8).accessibilityLabel("已收藏") }
             }
-            .padding(.vertical, 10).padding(.leading, outgoing ? 14 : (tail ? 21 : 14)).padding(.trailing, outgoing && tail ? 21 : 14)
-            .foregroundStyle(outgoing ? Color.white : Color.primary)
-            .background(outgoing ? palette.color : Color(uiColor: .secondarySystemBackground), in: MessageBubbleShape(outgoing: outgoing, tail: tail))
+            .padding(.vertical, 12).padding(.horizontal, 16)
+            .foregroundStyle(Color.primary)
+            .glassSurface(in: RoundedRectangle(cornerRadius: 22, style: .continuous), tint: outgoing ? palette.color : .clear)
             .frame(maxWidth: min(520, width * 0.78), alignment: outgoing ? .trailing : .leading)
             .contextMenu {
                 Button { replyingTo = message; focused = true } label: { Label("回复这句", systemImage: "arrowshape.turn.up.left") }
@@ -245,7 +209,7 @@ struct ChatView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Image(systemName: "waveform").font(.title3)
                     ProgressView(value: model.playingID == id ? model.playbackProgress : 0)
-                        .tint(outgoing ? .white : palette.color).frame(width: 94)
+                        .tint(palette.color).frame(width: 94)
                 }
                 Text(duration(model.voiceDurations[id] ?? 0)).font(.caption.monospacedDigit())
             }.padding(.vertical, 4)
@@ -253,6 +217,11 @@ struct ChatView: View {
     }
     private func duration(_ seconds: Double) -> String { let value = max(0, Int(seconds.rounded())); return String(format: "%d:%02d", value / 60, value % 60) }
     private func feedback() { if haptics { UISelectionFeedbackGenerator().selectionChanged() } }
+    private func sendDraft() {
+        guard canSend, model.queue(composed) else { return }
+        draft = ""; replyingTo = nil; feedback()
+        Task { await model.retry() }
+    }
     private var composer: some View {
         VStack(spacing: 8) {
             if let reply = replyingTo {
@@ -264,7 +233,7 @@ struct ChatView: View {
                     }
                     Spacer()
                     Button { replyingTo = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(uiColor: .secondaryLabel)) }.accessibilityLabel("取消引用")
-                }.frame(maxHeight: 58).padding(.horizontal, 16).padding(.top, 9)
+                }.frame(maxHeight: 58).padding(12).glassSurface(in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 16).padding(.top, 8)
             }
             HStack(alignment: .bottom, spacing: 10) {
                 Menu {
@@ -273,26 +242,19 @@ struct ChatView: View {
                     Button { focused = false; selection = 3 } label: { Label("头像与聊天外观", systemImage: "paintpalette") }
                     Button { Task { await model.refresh() } } label: { Label("同步聊天", systemImage: "arrow.clockwise") }
                 } label: {
-                    Image(systemName: "plus.circle.fill").font(.system(size: 29)).foregroundStyle(Color(uiColor: .secondaryLabel))
-                        .frame(width: 38, height: 44)
+                    Image(systemName: "plus").font(.system(size: 20, weight: .medium)).foregroundStyle(Color.primary)
+                        .frame(width: 44, height: 44).glassSurface(in: Circle())
                 }.accessibilityLabel("更多聊天功能")
-                HStack(alignment: .bottom, spacing: 6) {
-                    TextField("信息", text: $draft, axis: .vertical).lineLimit(1...5).focused($focused)
-                        .padding(.vertical, 10).padding(.leading, 14).font(.body)
-                    Button {
-                        let text = composed
-                        guard model.queue(text) else { return }
-                        draft = ""; replyingTo = nil; feedback()
-                        Task { await model.retry() }
-                    } label: {
-                        Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(.white)
-                            .frame(width: 29, height: 29).background(canSend ? palette.color : Color(uiColor: .tertiaryLabel), in: Circle())
-                    }.disabled(!canSend).padding(.trailing, 5).padding(.bottom, 5).accessibilityLabel("发送信息")
-                }.background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 23))
-                    .overlay(RoundedRectangle(cornerRadius: 23).strokeBorder(Color(uiColor: .separator).opacity(0.6), lineWidth: 0.5))
-            }.padding(.horizontal, 9).padding(.bottom, 8).padding(.top, replyingTo == nil ? 8 : 0)
+                ZStack(alignment: .leading) {
+                    if draft.isEmpty {
+                        Text("想说什么，回车就好").font(.body).foregroundStyle(Color(uiColor: .secondaryLabel)).allowsHitTesting(false)
+                    }
+                    ReturnComposer(text: $draft, focused: $focused, canSend: canSend, onSend: sendDraft)
+                }.padding(.horizontal, 17).padding(.vertical, 2)
+                    .glassSurface(in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+            }.padding(.horizontal, 16).padding(.bottom, 8).padding(.top, replyingTo == nil ? 10 : 0)
             if composed.count > 3800 { Text("\(composed.count) / 4000 字").font(.caption2).foregroundStyle(composed.count > 4000 ? .red : .secondary).padding(.bottom, 4) }
-        }.background(.bar)
+        }
     }
     private var searchSheet: some View {
         NavigationStack {

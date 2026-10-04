@@ -22,7 +22,7 @@ final class CompanionUITests: XCTestCase {
     }
     func testQuoteReplyAndCancel() {
         let app = launch()
-        let message = app.staticTexts["忙完了？过来，让我看看你。"]
+        let message = app.staticTexts["过来，让我看看你。"]
         XCTAssertTrue(message.waitForExistence(timeout: 10))
         message.press(forDuration: 1.2)
         let reply = app.buttons["回复这句"]
@@ -34,7 +34,7 @@ final class CompanionUITests: XCTestCase {
     }
     func testLocalFavoritePersistsOnRelaunch() {
         let app = launch()
-        let message = app.staticTexts["忙完了？过来，让我看看你。"]
+        let message = app.staticTexts["过来，让我看看你。"]
         XCTAssertTrue(message.waitForExistence(timeout: 10))
         message.press(forDuration: 1.2)
         let save = app.buttons["收藏这句"]
@@ -47,5 +47,32 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(message.waitForExistence(timeout: 10))
         message.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["取消收藏"].waitForExistence(timeout: 5))
+    }
+    func testSentenceBubblesAndReturnSend() {
+        let app = launch()
+        XCTAssertTrue(app.staticTexts["忙完了？"].exists)
+        XCTAssertTrue(app.staticTexts["过来，让我看看你。"].exists)
+        XCTAssertTrue(app.staticTexts["那就赖着。"].exists)
+        XCTAssertFalse(app.staticTexts["忙完了？过来，让我看看你。"].exists)
+        XCTAssertFalse(app.buttons["发送信息"].exists)
+        let input = app.textViews["chat-composer"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap(); input.typeText("Return sends this once\n")
+        XCTAssertTrue(app.staticTexts["Return sends this once"].waitForExistence(timeout: 5))
+        XCTAssertEqual(input.value as? String, "")
+        XCTAssertFalse(app.staticTexts["Return sends this once\n"].exists)
+    }
+    func testEdgeBackReturnsToPreviousScreen() {
+        let app = launch()
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.45))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.45))
+        start.press(forDuration: 0.1, thenDragTo: end)
+        let chat = app.buttons["聊天"]
+        XCTAssertTrue(chat.waitForExistence(timeout: 5))
+        chat.tap()
+        XCTAssertTrue(app.buttons["搜索聊天"].waitForExistence(timeout: 5))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.45))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.45)))
+        XCTAssertTrue(chat.waitForExistence(timeout: 5))
     }
 }

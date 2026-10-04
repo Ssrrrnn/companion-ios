@@ -32,3 +32,12 @@ True voice calls need real-time audio transport and ASR; photo messages need a b
 ## Validation
 
 Release IPA compiles with Xcode on macOS. The same workflow separately compiles Debug for an iOS simulator, runs UI tests for search, quote cancellation and local-favorite persistence, launches synthetic preview messages with a DEBUG-only argument, and captures light/dark chat and home screenshots. Release builds contain no preview branch and no account credentials.
+
+## 0.3 user-directed revision
+
+The user requested glass, custom wallpaper, individual sentence bubbles, Return sending and edge back navigation. This replaces the 0.2 iMessage imitation with original translucent rounded cards and a floating dock. Apple native Liquid Glass requires iOS 26; older builds/systems use ultra-thin material with highlights. Photo wallpaper now appears on home and chat with optional blur/shade. Assistant text splits for display only; original history and voice IDs are preserved. Quote/copy/manual favorite act on the selected sentence, while search anchors still refer to original messages. The composer handles a typed Return separately from pasted paragraphs and IME marked text. NavigationStack preserves the previous root screen; native left-edge rightward pop and right-edge leftward back are supported.
+
+Official technical references:
+- https://developer.apple.com/documentation/swiftui/glass
+- https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:)
+- https://developer.apple.com/documentation/swiftui/understanding-the-navigation-stack

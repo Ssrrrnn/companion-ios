@@ -1,6 +1,6 @@
 # 小家 · Personal iOS companion
 
-A generic SwiftUI client for a personal companion service. iMessage-inspired chat, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
+A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
 ## AltStore Classic updates
 
@@ -29,3 +29,5 @@ Every release also compiles the app for an iOS simulator and captures actual lig
 ## Local build on a Mac
 
 Install Xcode and XcodeGen, then run `bash ios/build.sh`. The output is `ios/build/Companion.ipa`. This client requires iOS 18 or later.
+
+Version 0.3 uses a floating glass dock and cards, shared photo/gradient wallpaper with blur and shade controls, assistant sentence bubbles, Return-to-send, and real stack navigation with edge back gestures. iOS 18 uses translucent material; native Liquid Glass is used only when built with a supporting SDK and running iOS 26+. Voice remains one recording per original reply, attached to its first sentence.
