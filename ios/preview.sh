@@ -13,11 +13,11 @@ PYBOOT
 test_exit=0
 xcodebuild -project Companion.xcodeproj -scheme Companion -configuration Debug \
   -sdk iphonesimulator -destination "id=$SIMULATOR_ID" -derivedDataPath build-simulator \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test > build/previews/tests.log 2>&1 || { test_exit=$?; tail -100 build/previews/tests.log; }
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -parallel-testing-enabled NO test > build/previews/tests.log 2>&1 || { test_exit=$?; tail -100 build/previews/tests.log; }
 xcrun simctl install "$SIMULATOR_ID" build-simulator/Build/Products/Debug-iphonesimulator/Companion.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 xcrun simctl ui "$SIMULATOR_ID" appearance light
-xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview
+xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview -AppleLocale zh_CN
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot build/previews/chat-light.png
 xcrun simctl ui "$SIMULATOR_ID" appearance dark
@@ -25,8 +25,11 @@ sleep 2
 xcrun simctl io "$SIMULATOR_ID" screenshot build/previews/chat-dark.png
 xcrun simctl terminate "$SIMULATOR_ID" com.ssrrrnn.companion
 xcrun simctl ui "$SIMULATOR_ID" appearance light
-xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --home
+xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --home -AppleLocale zh_CN
 sleep 3
 xcrun simctl io "$SIMULATOR_ID" screenshot build/previews/home-light.png
+xcrun simctl ui "$SIMULATOR_ID" appearance dark
+sleep 2
+xcrun simctl io "$SIMULATOR_ID" screenshot build/previews/home-dark.png
 xcrun simctl terminate "$SIMULATOR_ID" com.ssrrrnn.companion
 exit "$test_exit"

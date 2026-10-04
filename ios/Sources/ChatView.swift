@@ -25,16 +25,33 @@ struct MessageBubbleShape: Shape {
     var outgoing: Bool
     var tail: Bool
     func path(in rect: CGRect) -> Path {
-        let inset: CGFloat = tail ? 7 : 0
-        var path = Path(roundedRect: CGRect(x: 0, y: 0, width: rect.width - inset, height: rect.height), cornerRadius: 20)
+        let radius = min(CGFloat(20), rect.height / 2)
+        let bodyWidth = rect.width - (tail ? 7 : 0)
+        let height = rect.height
+        // A single outline avoids overlapping subpaths cutting holes in the fill.
+        var path = Path()
+        path.move(to: CGPoint(x: radius, y: 0))
+        path.addLine(to: CGPoint(x: bodyWidth - radius, y: 0))
+        path.addQuadCurve(to: CGPoint(x: bodyWidth, y: radius), control: CGPoint(x: bodyWidth, y: 0))
+        path.addLine(to: CGPoint(x: bodyWidth, y: height - radius))
         if tail {
-            let x = rect.width
-            let y = rect.height
-            path.move(to: CGPoint(x: x - 22, y: y - 17))
-            path.addQuadCurve(to: CGPoint(x: x, y: y), control: CGPoint(x: x - 9, y: y + 1))
-            path.addQuadCurve(to: CGPoint(x: x - 10, y: y - 24), control: CGPoint(x: x - 9, y: y - 3))
-            path.closeSubpath()
+            path.addCurve(to: CGPoint(x: rect.width, y: height),
+                          control1: CGPoint(x: bodyWidth, y: height - 5),
+                          control2: CGPoint(x: rect.width - 7, y: height - 1))
+            path.addCurve(to: CGPoint(x: bodyWidth - 15, y: height - 5),
+                          control1: CGPoint(x: rect.width - 10, y: height),
+                          control2: CGPoint(x: bodyWidth - 10, y: height - 2))
+            path.addQuadCurve(to: CGPoint(x: bodyWidth - 28, y: height),
+                              control: CGPoint(x: bodyWidth - 20, y: height))
+        } else {
+            path.addQuadCurve(to: CGPoint(x: bodyWidth - radius, y: height),
+                              control: CGPoint(x: bodyWidth, y: height))
         }
+        path.addLine(to: CGPoint(x: radius, y: height))
+        path.addQuadCurve(to: CGPoint(x: 0, y: height - radius), control: CGPoint(x: 0, y: height))
+        path.addLine(to: CGPoint(x: 0, y: radius))
+        path.addQuadCurve(to: CGPoint(x: radius, y: 0), control: CGPoint(x: 0, y: 0))
+        path.closeSubpath()
         return outgoing ? path : path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.width, ty: 0))
     }
 }
@@ -67,14 +84,14 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    Text("我们的聊天").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.vertical, 22)
+                    Text("我们的聊天").font(.caption2.weight(.semibold)).foregroundStyle(Color(uiColor: .secondaryLabel)).padding(.vertical, 22)
                     if model.messages.isEmpty && model.pending == nil {
                         VStack(spacing: 14) {
                             CompanionAvatar(size: 72)
                             Text(model.connected ? "想说的话，慢慢说。" : "先把我们的小家连接起来。")
                                 .font(.title3.weight(.medium))
                             Text(model.connected ? "这里延续你们已有的聊天和记忆。" : "在设置里填写服务地址与连接密钥。")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .font(.subheadline).foregroundStyle(Color(uiColor: .secondaryLabel))
                             if !model.connected { Button("去设置") { selection = 3 }.buttonStyle(.bordered) }
                         }.padding(.vertical, 50).frame(maxWidth: .infinity)
                     }
@@ -88,7 +105,7 @@ struct ChatView: View {
                             .padding(.top, 12)
                         HStack {
                             Spacer()
-                            if model.sending { Text("发送中").foregroundStyle(.secondary) }
+                            if model.sending { Text("发送中").foregroundStyle(Color(uiColor: .secondaryLabel)) }
                             else {
                                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                                 Button("重试") { Task { await model.retry() } }
@@ -102,7 +119,7 @@ struct ChatView: View {
                             HStack {
                                 HStack(spacing: 5) {
                                     ProgressView().controlSize(.mini)
-                                    Text("正在回复").font(.caption).foregroundStyle(.secondary)
+                                    Text("正在回复").font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel))
                                 }.padding(14).background(Color(uiColor: .secondarySystemBackground), in: Capsule())
                                 Spacer()
                             }.padding(.top, 16).accessibilityLabel("正在等待回复")
@@ -157,11 +174,11 @@ struct ChatView: View {
                     HStack(spacing: 8) {
                         CompanionAvatar(size: 32)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                            Text(name).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
                             Text(model.sending ? "正在回复" : model.connected ? "已连接" : "尚未连接")
-                                .font(.caption2).foregroundStyle(.secondary)
+                                .font(.caption2).foregroundStyle(Color(uiColor: .secondaryLabel))
                         }
-                        Image(systemName: "chevron.down").font(.caption2).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.down").font(.caption2).foregroundStyle(Color(uiColor: .tertiaryLabel))
                     }
                 }.accessibilityLabel("查看\(name)的资料")
             }
@@ -243,10 +260,10 @@ struct ChatView: View {
                     Capsule().fill(palette.color).frame(width: 3)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("回复 \(reply.role == "user" ? "我" : name)").font(.caption.weight(.semibold)).foregroundStyle(palette.color)
-                        Text(QuotedText(reply.text).body).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Text(QuotedText(reply.text).body).font(.caption).foregroundStyle(Color(uiColor: .secondaryLabel)).lineLimit(2)
                     }
                     Spacer()
-                    Button { replyingTo = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.accessibilityLabel("取消引用")
+                    Button { replyingTo = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color(uiColor: .secondaryLabel)) }.accessibilityLabel("取消引用")
                 }.frame(maxHeight: 58).padding(.horizontal, 16).padding(.top, 9)
             }
             HStack(alignment: .bottom, spacing: 10) {
@@ -256,7 +273,7 @@ struct ChatView: View {
                     Button { focused = false; selection = 3 } label: { Label("头像与聊天外观", systemImage: "paintpalette") }
                     Button { Task { await model.refresh() } } label: { Label("同步聊天", systemImage: "arrow.clockwise") }
                 } label: {
-                    Image(systemName: "plus.circle.fill").font(.system(size: 29)).foregroundStyle(.secondary)
+                    Image(systemName: "plus.circle.fill").font(.system(size: 29)).foregroundStyle(Color(uiColor: .secondaryLabel))
                         .frame(width: 38, height: 44)
                 }.accessibilityLabel("更多聊天功能")
                 HStack(alignment: .bottom, spacing: 6) {
@@ -290,7 +307,7 @@ struct ChatView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(message.role == "user" ? "我" : name).font(.caption.weight(.semibold)).foregroundStyle(palette.color)
-                                Text(QuotedText(message.text).body).font(.body).foregroundStyle(.primary).lineLimit(4)
+                                Text(QuotedText(message.text).body).font(.body).foregroundStyle(Color.primary).lineLimit(4)
                             }.padding(.vertical, 6)
                         }.accessibilityIdentifier("chat-search-result-\(message.id)")
                     }

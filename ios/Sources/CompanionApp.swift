@@ -2,6 +2,9 @@ import SwiftUI
 
 let homePaper = Color(uiColor: .systemGroupedBackground)
 let homeWine = Color(red: 0.43, green: 0.23, blue: 0.30)
+let homeAccent = Color(uiColor: UIColor { traits in
+    traits.userInterfaceStyle == .dark ? UIColor(red: 0.86, green: 0.67, blue: 0.73, alpha: 1) : UIColor(red: 0.43, green: 0.23, blue: 0.30, alpha: 1)
+})
 
 @main
 struct CompanionApp: App {
@@ -11,7 +14,7 @@ struct CompanionApp: App {
     @AppStorage("app_appearance") private var appearance = "system"
     var body: some Scene {
         WindowGroup {
-            CompanionTabs().environmentObject(model).environmentObject(space).tint(homeWine)
+            CompanionTabs().environmentObject(model).environmentObject(space).tint(homeAccent)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
                     guard scenePhase == .active else { model.stopAudio(); return }
@@ -145,7 +148,7 @@ struct HomeView: View {
     private func homeTile(_ title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: icon).font(.title3).foregroundStyle(homeWine)
+                Image(systemName: icon).font(.title3).foregroundStyle(homeAccent)
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }.frame(maxWidth: .infinity, minHeight: 106, alignment: .leading).padding(18)
