@@ -10,16 +10,22 @@ let homeAccent = Color(uiColor: UIColor { traits in
 struct CompanionApp: App {
     @StateObject private var model = CompanionModel()
     @StateObject private var space = PersonalSpace()
+    @StateObject private var library = ReadingLibrary()
+    @StateObject private var device = DeviceContext()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app_appearance") private var appearance = "system"
     var body: some Scene {
         WindowGroup {
             CompanionTabs().environmentObject(model).environmentObject(space).tint(homeAccent)
+                .environmentObject(library).environmentObject(device)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
+                    device.setActive(scenePhase == .active)
                     guard scenePhase == .active else { model.stopAudio(); return }
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
+                        if ProcessInfo.processInfo.arguments.contains("--reset-draft") { UserDefaults.standard.removeObject(forKey: "chat_draft_v1") }
+                        if ProcessInfo.processInfo.arguments.contains("--books") { library.addPreviewBook() }
                         model.isPreview = true
                         model.connected = true
                         model.discardPending()
@@ -60,16 +66,23 @@ struct CompanionTabs: View {
                 else if selection == 3 { SettingsView() }
                 else { HomeView(selection: navigationSelection) }
             }
-            .background { GlassWallpaper() }
             .safeAreaInset(edge: .bottom, spacing: 0) { dock }
-            .navigationDestination(for: CompanionRoute.self) { _ in
-                ChatView(selection: navigationSelection, onBack: { if !path.isEmpty { path.removeLast() } })
+            .navigationDestination(for: CompanionRoute.self) { route in
+                switch route {
+                case .chat:
+                    ChatView(selection: navigationSelection, onBack: { if !path.isEmpty { path.removeLast() } })
+                case .books:
+                    BookshelfView(openChat: { path = [.chat] })
+                case .device:
+                    DeviceContextView(openChat: { path = [.chat] })
+                }
             }
         }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
-                if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
+                if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
+                else if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
             }
             #endif
         }
@@ -95,11 +108,13 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat }
+enum CompanionRoute: Hashable { case chat, books, device }
 
 struct HomeView: View {
     @EnvironmentObject private var model: CompanionModel
     @EnvironmentObject private var space: PersonalSpace
+    @EnvironmentObject private var library: ReadingLibrary
+    @EnvironmentObject private var device: DeviceContext
     @AppStorage("companion_name") private var name = "他"
     @AppStorage("relationship_caption") private var caption = "把日常，留在我们的小家。"
     @AppStorage("anniversary_enabled") private var anniversaryEnabled = false
@@ -120,7 +135,7 @@ struct HomeView: View {
                     Spacer()
                     Button { selection = 3 } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }.accessibilityLabel("小家设置")
                 }
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top) {
                         CompanionAvatar(size: 64)
                         Spacer()
@@ -132,7 +147,7 @@ struct HomeView: View {
                             }.padding(.top, 8)
                         }
                     }
-                    Text("回到我们的小家").font(.system(.largeTitle, design: .serif).weight(.medium))
+                    Text("回到我们的小家").font(.system(.title, design: .serif).weight(.medium))
                     Text(caption).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                     Button { selection = model.connected ? 1 : 3 } label: {
                         HStack { Text(model.connected ? "去找\(name)" : "连接我们的小家"); Spacer(); Image(systemName: "arrow.up.right") }
@@ -140,13 +155,19 @@ struct HomeView: View {
                             .glassSurface(in: RoundedRectangle(cornerRadius: 18), tint: homeAccent)
                     }
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-                if let last = model.messages.last(where: { $0.role == "assistant" }) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("\(name)留下的话", systemImage: "quote.opening").font(.caption).foregroundStyle(.secondary)
-                        Text(QuotedText(last.text).body).font(.system(.title3, design: .serif)).lineSpacing(5).lineLimit(4)
-                        Button("接着聊 →") { selection = 1 }.font(.subheadline.weight(.medium))
-                    }.padding(.horizontal, 4)
-                }
+                NavigationLink(value: CompanionRoute.books) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "books.vertical").font(.title2).foregroundStyle(homeAccent)
+                            .frame(width: 54, height: 62).background(homeAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 15))
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("一起读书").font(.headline).foregroundStyle(.primary)
+                            Text(library.books.isEmpty ? "把一本书，放在两个人中间。" : "\(library.books.count) 本书 · 留住读到这里的想法")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24))
+                }.buttonStyle(.plain).accessibilityIdentifier("home-reading")
                 HStack { Text("今天，过得怎么样").font(.headline); Spacer(); Button { timeline = true } label: { Image(systemName: "calendar") }.accessibilityLabel("查看心情记录") }
                 HStack(spacing: 15) {
                     Text(space.todayMood?.emoji ?? "🤍").font(.system(size: 32))
@@ -165,6 +186,16 @@ struct HomeView: View {
                     homeTile("日记与珍藏", subtitle: "那些舍不得忘记的瞬间", icon: "heart.text.square") { selection = 2 }
                     homeTile("小纸条", subtitle: space.notes.isEmpty ? "存一个小小的念头" : "\(space.notes.count) 个小小的念头", icon: "note.text") { noteSheet = true }
                 }
+                NavigationLink(value: CompanionRoute.device) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "iphone").foregroundStyle(homeAccent)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("设备与隐私").font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            Text(device.summary).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.padding(17).glassSurface(in: RoundedRectangle(cornerRadius: 22))
+                }.buttonStyle(.plain)
                 if let note = space.notes.first {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("最近的小纸条").font(.caption).foregroundStyle(.secondary)

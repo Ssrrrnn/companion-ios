@@ -3,8 +3,17 @@ import AVFoundation
 import CryptoKit
 
 @MainActor
+final class AudioProgress: ObservableObject {
+    @Published var value: Double = 0
+}
+
+@MainActor
 final class CompanionModel: ObservableObject {
-    @Published var messages: [Message] = []
+    @Published var messages: [Message] = [] {
+        didSet { if messages != oldValue { chatRows = presentation.update(messages) } }
+    }
+    private var presentation = ChatPresentationCache()
+    private(set) var chatRows: [ChatRow] = []
     @Published var favorites: [Keepsake] = []
     @Published var diaries: [Keepsake] = []
     @Published var pending: PendingMessage?
@@ -12,7 +21,11 @@ final class CompanionModel: ObservableObject {
     @Published var error: String?
     @Published var connected = false
     @Published var playingID: String?
-    @Published var playbackProgress: Double = 0
+    let audioProgress = AudioProgress()
+    var playbackProgress: Double {
+        get { audioProgress.value }
+        set { audioProgress.value = newValue }
+    }
     @Published var playbackPaused = false
     @Published private(set) var voiceDurations: [String: Double] = [:]
     @Published var refreshing = false
@@ -48,7 +61,7 @@ final class CompanionModel: ObservableObject {
             let result: History = try await api.request("v1/history")
             // A send can start while this GET is in flight. Do not overwrite its reply.
             guard generation == conversationGeneration, !sending, pending == nil else { return }
-            messages = result.messages
+            if messages != result.messages { messages = result.messages }
             connected = true
         } catch is CancellationError { }
         catch { if generation == conversationGeneration { connected = false } }
@@ -137,7 +150,8 @@ final class CompanionModel: ObservableObject {
             UserDefaults.standard.set(voiceDurations, forKey: voicesKey)
         } catch { self.error = "文字已收到，但这条语音未能保存。" }
     }
-    func hasAudio(_ id: String) -> Bool { voiceDurations[id] != nil && FileManager.default.fileExists(atPath: voiceURL(id).path) }
+    // Files are validated when actually played, not during every bubble render.
+    func hasAudio(_ id: String) -> Bool { voiceDurations[id] != nil }
     func play(_ id: String) {
         if playingID == id, let player {
             if playbackPaused { player.play(); playbackPaused = false }

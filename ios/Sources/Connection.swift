@@ -37,7 +37,7 @@ enum ConnectionError: LocalizedError {
     }
 }
 
-struct Message: Codable, Identifiable {
+struct Message: Codable, Identifiable, Equatable {
     let id: String
     let role: String
     let text: String

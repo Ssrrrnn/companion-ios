@@ -3,7 +3,7 @@ import XCTest
 final class CompanionUITests: XCTestCase {
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--ui-preview"]
+        app.launchArguments = ["--ui-preview", "--reset-draft"]
         app.launch()
         XCTAssertTrue(app.buttons["搜索聊天"].waitForExistence(timeout: 15))
         return app
@@ -76,5 +76,26 @@ final class CompanionUITests: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.30, dy: 0.45)))
         XCTAssertTrue(chat.waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars["留给我们的"].exists)
+    }
+    func testHomeReaderPreparesDraftWithoutSending() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--home", "--reset-draft"]
+        app.launch()
+        let reading = app.buttons["home-reading"]
+        XCTAssertTrue(reading.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["接着聊 →"].exists)
+        reading.tap()
+        let example = app.buttons["add-preview-book"]
+        XCTAssertTrue(example.waitForExistence(timeout: 5)); example.tap()
+        let book = app.staticTexts["共读示例"].firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 5)); book.tap()
+        let share = app.buttons["share-reading"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10)); share.tap()
+        let toDraft = app.buttons["reading-to-draft"]
+        XCTAssertTrue(toDraft.waitForExistence(timeout: 5)); toDraft.tap()
+        let input = app.textViews["chat-composer"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        XCTAssertTrue((input.value as? String ?? "").contains("一起读《共读示例》"))
+        XCTAssertFalse(app.staticTexts["发送中"].exists)
     }
 }

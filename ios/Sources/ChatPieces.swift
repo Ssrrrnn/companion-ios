@@ -22,6 +22,36 @@ struct ChatPiece: Identifiable {
     }
 }
 
+/// Incremental presentation cache. Typing, audio ticks and unchanged history
+/// must not split the entire conversation again for every visible row.
+struct ChatRow: Identifiable {
+    let piece: ChatPiece
+    let startsGroup: Bool
+    var id: String { piece.id }
+}
+
+struct ChatPresentationCache {
+    private var entries: [String: (Message, [ChatPiece])] = [:]
+    private(set) var splitCount = 0
+    mutating func update(_ messages: [Message]) -> [ChatRow] {
+        var retained: [String: (Message, [ChatPiece])] = [:]
+        var rows: [ChatRow] = []
+        var previousRole: String?
+        for message in messages {
+            let pieces: [ChatPiece]
+            if let cached = entries[message.id], cached.0 == message { pieces = cached.1 }
+            else { pieces = ChatPiece.make(message); splitCount += 1 }
+            retained[message.id] = (message, pieces)
+            for piece in pieces {
+                rows.append(ChatRow(piece: piece, startsGroup: previousRole != message.role))
+                previousRole = message.role
+            }
+        }
+        entries = retained
+        return rows
+    }
+}
+
 enum SentenceText {
     static func split(_ text: String) -> [String] {
         let characters = Array(text)

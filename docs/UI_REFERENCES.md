@@ -41,3 +41,17 @@ Official technical references:
 - https://developer.apple.com/documentation/swiftui/glass
 - https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:)
 - https://developer.apple.com/documentation/swiftui/understanding-the-navigation-stack
+
+## 0.4 performance, shared reading and device privacy
+
+References inspected (feature inspiration only; no third-party source, assets or prompts copied):
+- https://github.com/zzyyksl/reading-nook — local reading progress, chosen-text notes and separate reader/AI annotations. This release implements a native local bookshelf, progress, bookmarks and user notes. AI answers use the existing chat, not automatic in-book annotations. Its subscription-based file-writing agent is NOT assumed to exist in our API-based bot, so that cost model is not advertised.
+- https://github.com/TricksterFlare/tavern-study — separate setting shelf, shared reading corner and RP desk. Do not conflate importing lore assets with installing a whole autonomous agent or all SillyTavern extensions. No code copied; inspected README currently says AGPL-3.0.
+- https://docs.sillytavern.app/usage/core-concepts/worldinfo/ — world info dynamically supplies prompt context; it is not a scheduler or OS tool permission.
+- https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate — background launch timing is not guaranteed. Independent activities should run on an authenticated server queue with budgets, audit records and explicit tool scopes, not an always-running phone timer.
+- https://developer.apple.com/documentation/uikit/uidevice/batterylevel — unknown levels must not be invented. Device state is opt-in and foreground-only; only deliberate chat sends share a timestamped snapshot.
+- https://developer.apple.com/documentation/healthkit/setting-up-healthkit and https://developer.apple.com/help/account/reference/supported-capabilities-ios — HealthKit needs capability/signing support and data-type consent. No HealthKit entitlement or prompt is shipped before verifying compatibility with the user's free signing workflow.
+
+Performance changes: incremental message cache, no unchanged-history replacement, no file-system checks during every bubble render, separate audio progress observation, initial bottom scroll anchor rather than an entry-time jump, no per-bubble live blur/shadow, radial backgrounds instead of giant blurred ellipses, and removal of duplicate home wallpaper layers. These remove identified hot paths; real-device frame rate still needs the user's installation check.
+
+Import and PDF text extraction run off the main actor. Books are protected local files, the index stores only progress/note metadata, and sharing explicitly previews a bounded excerpt. EPUB, DRM books, OCR, automatic server reading, in-book AI replies and health access are not implemented. Existing drafts are appended to, never overwritten. No private book, device data or credentials are committed to the public repository.

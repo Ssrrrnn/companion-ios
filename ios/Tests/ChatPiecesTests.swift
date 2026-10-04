@@ -25,4 +25,27 @@ final class ChatPiecesTests: XCTestCase {
         XCTAssertEqual(pieces[0].text, message.text)
         XCTAssertEqual(pieces[0].id, message.id)
     }
+    func testCacheReusesUnchangedMessagesAndSplitsOnlyNewText() {
+        var cache = ChatPresentationCache()
+        let first = Message(id: "1", role: "assistant", text: "第一句。第二句。")
+        let second = Message(id: "2", role: "user", text: "好。")
+        XCTAssertEqual(cache.update([first, second]).count, 3)
+        XCTAssertEqual(cache.splitCount, 2)
+        for _ in 0..<100 { _ = cache.update([first, second]) }
+        XCTAssertEqual(cache.splitCount, 2)
+        let changed = Message(id: "1", role: "assistant", text: "修改过了。")
+        let rows = cache.update([changed, second])
+        XCTAssertEqual(cache.splitCount, 3)
+        XCTAssertEqual(rows.first?.piece.text, "修改过了。")
+        XCTAssertEqual(rows.map(\.startsGroup), [true, true])
+        XCTAssertTrue(cache.update([]).isEmpty)
+    }
+    func testLargeHistoryCachePerformance() {
+        let history = (0..<500).map { Message(id: "\($0)", role: "assistant", text: String(repeating: "我们一起慢慢聊。", count: 8)) }
+        var cache = ChatPresentationCache()
+        let rows = cache.update(history)
+        XCTAssertEqual(rows.count, 4000)
+        measure { for _ in 0..<20 { _ = cache.update(history) } }
+        XCTAssertEqual(cache.splitCount, 500)
+    }
 }

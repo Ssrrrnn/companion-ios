@@ -94,6 +94,12 @@ struct SettingsView: View {
                 Text("主动消息继续通过 QQ 或 Telegram 到达，打开小家可以同步查看聊天。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
+            Section("一起做的事") {
+                NavigationLink("一起读书", value: CompanionRoute.books)
+                NavigationLink("设备与隐私", value: CompanionRoute.device)
+                Text("自主活动与酒馆设定尚未接入；不会在后台假装执行任务，也不会替换已有记忆与人格。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
         }.scrollContentBackground(.hidden).background { GlassWallpaper() }
             .navigationTitle("设置").toolbarBackground(.hidden, for: .navigationBar)
             .onChange(of: avatarItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: false) } } }

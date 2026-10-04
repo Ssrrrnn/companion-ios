@@ -17,14 +17,16 @@ xcodebuild -project Companion.xcodeproj -scheme Companion -configuration Debug \
 xcrun simctl install "$SIMULATOR_ID" build-simulator/Build/Products/Debug-iphonesimulator/Companion.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 # Launch in each appearance so screenshots also verify a cold dark-mode start.
-for page in chat home; do
+for page in chat home books; do
   for appearance in light dark; do
     xcrun simctl terminate "$SIMULATOR_ID" com.ssrrrnn.companion || true
     xcrun simctl ui "$SIMULATOR_ID" appearance "$appearance"
     if [ "$page" = home ]; then
-      xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --home -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'
+      xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --home --reset-draft -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'
+    elif [ "$page" = books ]; then
+      xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --books --reset-draft -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'
     else
-      xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'
+      xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --reset-draft -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'
     fi
     sleep 4
     xcrun simctl io "$SIMULATOR_ID" screenshot "build/previews/$page-$appearance.png"

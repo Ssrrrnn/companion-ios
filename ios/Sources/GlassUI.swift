@@ -40,6 +40,22 @@ extension View {
     func glassSurface<S: Shape>(in shape: S, tint: Color = .clear) -> some View {
         modifier(GlassSurface(shape: shape, tint: tint))
     }
+    func chatSurface(tint: Color) -> some View { modifier(ChatSurface(tint: tint)) }
+}
+
+/// Long lists use a translucent tint instead of hundreds of live blur layers.
+/// Fixed chrome still uses glassSurface; Reduce Transparency remains respected.
+private struct ChatSurface: ViewModifier {
+    let tint: Color
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        content.background {
+            shape.fill(Color(uiColor: .secondarySystemGroupedBackground).opacity(reduceTransparency ? 1 : scheme == .dark ? 0.90 : 0.80))
+                .overlay(shape.fill(tint.opacity(scheme == .dark ? 0.25 : 0.14)))
+        }.overlay(shape.stroke(Color.white.opacity(scheme == .dark ? 0.14 : 0.70), lineWidth: 0.6).allowsHitTesting(false))
+    }
 }
 
 enum WallpaperStyle: String, CaseIterable, Identifiable {
@@ -72,12 +88,9 @@ struct GlassWallpaper: View {
                         .frame(width: geometry.size.width, height: geometry.size.height).clipped().blur(radius: blur)
                 } else {
                     Color(uiColor: scheme == .dark ? .black : UIColor(red: 0.94, green: 0.93, blue: 0.95, alpha: 1))
-                    Ellipse().fill(style.accents[0]).frame(width: geometry.size.width * 1.3, height: geometry.size.height * 0.55)
-                        .blur(radius: 65).offset(x: -80, y: -geometry.size.height * 0.25)
-                    Ellipse().fill(style.accents[1]).frame(width: geometry.size.width, height: geometry.size.height * 0.48)
-                        .blur(radius: 75).offset(x: 100, y: geometry.size.height * 0.12)
-                    Ellipse().fill(style.accents[2]).frame(width: geometry.size.width, height: geometry.size.height * 0.3)
-                        .blur(radius: 70).offset(x: -70, y: geometry.size.height * 0.4)
+                    RadialGradient(colors: [style.accents[0], .clear], center: .topLeading, startRadius: 0, endRadius: geometry.size.height * 0.8)
+                    RadialGradient(colors: [style.accents[1].opacity(0.8), .clear], center: .trailing, startRadius: 0, endRadius: geometry.size.height * 0.65)
+                    RadialGradient(colors: [style.accents[2].opacity(0.8), .clear], center: .bottomLeading, startRadius: 0, endRadius: geometry.size.height * 0.55)
                 }
                 (scheme == .dark ? Color.black : Color.white).opacity(space.wallpaper == nil ? (scheme == .dark ? 0.57 : 0.18) : shade)
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()

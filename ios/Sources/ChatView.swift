@@ -41,7 +41,6 @@ struct ChatView: View {
     @State private var unseen = false
     @State private var width: CGFloat = 390
     private var palette: ChatPalette { ChatPalette(rawValue: paletteName) ?? .blue }
-    private var pieces: [ChatPiece] { model.messages.flatMap(ChatPiece.make) }
     private var composed: String { QuotedText.compose(draft, replyingTo: replyingTo, name: name) }
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && composed.count <= 4000 && model.pending == nil && !model.sending && model.connected
@@ -61,10 +60,10 @@ struct ChatView: View {
                             if !model.connected { Button("去设置") { selection = 3 }.buttonStyle(.bordered) }
                         }.padding(.vertical, 50).frame(maxWidth: .infinity)
                     }
-                    ForEach(Array(pieces.enumerated()), id: \.element.id) { index, piece in
-                        let gap: CGFloat = index == 0 || pieces[index - 1].source.role != piece.source.role ? 14 : 7
+                    ForEach(model.chatRows) { row in
+                        let piece = row.piece
                         bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil)
-                            .padding(.top, gap).id(piece.anchor)
+                            .padding(.top, row.startsGroup ? 14 : 7).id(piece.anchor)
                     }
                     if let pending = model.pending {
                         bubble(Message(id: pending.id.uuidString, role: "user", text: pending.text))
@@ -96,6 +95,7 @@ struct ChatView: View {
                 }.padding(.horizontal, 16)
             }
             .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 100
@@ -115,7 +115,6 @@ struct ChatView: View {
                     }.padding(.bottom, 12)
                 }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
             .onChange(of: model.messages.last?.id) { _, _ in
                 if nearBottom { jumpToBottom(proxy) } else { unseen = true }
             }
@@ -190,7 +189,7 @@ struct ChatView: View {
             }
             .padding(.vertical, 12).padding(.horizontal, 16)
             .foregroundStyle(Color.primary)
-            .glassSurface(in: RoundedRectangle(cornerRadius: 22, style: .continuous), tint: outgoing ? palette.color : .clear)
+            .chatSurface(tint: outgoing ? palette.color : .clear)
             .frame(maxWidth: min(520, width * 0.78), alignment: outgoing ? .trailing : .leading)
             .contextMenu {
                 Button { replyingTo = message; focused = true } label: { Label("回复这句", systemImage: "arrowshape.turn.up.left") }
@@ -207,8 +206,7 @@ struct ChatView: View {
                 Image(systemName: model.playingID == id && !model.playbackPaused ? "pause.fill" : "play.fill").font(.body)
                 VStack(alignment: .leading, spacing: 5) {
                     Image(systemName: "waveform").font(.title3)
-                    ProgressView(value: model.playingID == id ? model.playbackProgress : 0)
-                        .tint(palette.color).frame(width: 94)
+                    VoiceProgress(progress: model.audioProgress, active: model.playingID == id, tint: palette.color)
                 }
                 Text(duration(model.voiceDurations[id] ?? 0)).font(.caption.monospacedDigit())
             }.padding(.vertical, 4)
@@ -279,4 +277,12 @@ struct ChatView: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { searching = false } } }
         }
     }
+}
+
+/// Playback ticks redraw only the progress strip, not the entire chat screen.
+private struct VoiceProgress: View {
+    @ObservedObject var progress: AudioProgress
+    let active: Bool
+    let tint: Color
+    var body: some View { ProgressView(value: active ? progress.value : 0).tint(tint).frame(width: 94) }
 }
