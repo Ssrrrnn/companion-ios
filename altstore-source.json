@@ -16,6 +16,15 @@
       "category": "lifestyle",
       "versions": [
         {
+          "version": "0.2.1",
+          "buildVersion": "9.1",
+          "minOSVersion": "18.0",
+          "size": 405279,
+          "localizedDescription": "修正气泡尾巴的透明缺口、联系人标题和深色模式的对比度。\n\n聊天焕新：iMessage 风格气泡、尾巴、输入栏与联系人头像。\n支持引用回复、长按复制/分享/收藏、搜索最近同步聊天、自动保存草稿、浏览旧消息时的新消息提示。\n语音条显示真实时长和播放进度，收到的语音保存在手机上，退出或更新后可以继续听。\n新增自定义头像、聊天壁纸、三种气泡色、深浅色外观、轻触反馈。\n新增纪念日、心情记录与小纸条；首页和珍藏页面重新设计。\n个人设置和手动收藏保存在手机里，日记与他的收藏继续连接原有服务。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.2.1-build9.1/Companion.ipa",
+          "date": "2026-10-04T14:57:19Z"
+        },
+        {
           "version": "0.2.0",
           "buildVersion": "7.1",
           "minOSVersion": "18.0",
