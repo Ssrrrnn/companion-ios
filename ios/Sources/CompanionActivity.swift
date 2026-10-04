@@ -149,7 +149,7 @@ final class ActivitySpace: ObservableObject {
         do {
             let _: PhoneOK = try await api.request("v1/heartbeat", body: JSONSerialization.data(withJSONObject: ["enabled": enabled]), timeout: 15)
             await sync(api: api, force: true)
-        } catch { error = "自主活动设置没有保存成功。" }
+        } catch { self.error = "自主活动设置没有保存成功。" }
     }
     #if DEBUG
     func preview() {

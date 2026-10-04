@@ -15,7 +15,7 @@ struct PhoneLocation: Codable, Sendable {
 }
 
 @MainActor
-final class LocationContext: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class LocationContext: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     @Published var enabled = UserDefaults.standard.bool(forKey: "phone_location_read_v1") {
         didSet {
             UserDefaults.standard.set(enabled, forKey: "phone_location_read_v1")
