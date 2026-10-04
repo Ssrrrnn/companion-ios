@@ -14,7 +14,17 @@
       "iconURL": "https://raw.githubusercontent.com/Ssrrrnn/companion-ios/main/ios/Sources/Assets.xcassets/AppIcon.appiconset/Icon.png",
       "tintColor": "#6E3B4D",
       "category": "lifestyle",
-      "versions": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "buildVersion": "2.1",
+          "minOSVersion": "18.0",
+          "size": 169439,
+          "localizedDescription": "加入 AltStore 更新源，后续新版可直接在 AltStore 更新。\n新增小家图标，设置页显示实际版本和构建号。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.1.1-build2.1/Companion.ipa",
+          "date": "2026-10-04T13:33:17Z"
+        }
+      ],
       "appPermissions": {
         "entitlements": [],
         "privacy": {}
