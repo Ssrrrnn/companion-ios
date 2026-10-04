@@ -25,8 +25,8 @@ struct MessageBubbleShape: Shape {
     var outgoing: Bool
     var tail: Bool
     func path(in rect: CGRect) -> Path {
-        let radius = min(CGFloat(20), rect.height / 2)
         let bodyWidth = rect.width - (tail ? 7 : 0)
+        let radius = min(CGFloat(20), rect.height / 2, bodyWidth / 2)
         let height = rect.height
         // A single outline avoids overlapping subpaths cutting holes in the fill.
         var path = Path()
@@ -41,7 +41,7 @@ struct MessageBubbleShape: Shape {
             path.addCurve(to: CGPoint(x: bodyWidth - 15, y: height - 5),
                           control1: CGPoint(x: rect.width - 10, y: height),
                           control2: CGPoint(x: bodyWidth - 10, y: height - 2))
-            path.addQuadCurve(to: CGPoint(x: bodyWidth - 28, y: height),
+            path.addQuadCurve(to: CGPoint(x: max(radius, bodyWidth - 28), y: height),
                               control: CGPoint(x: bodyWidth - 20, y: height))
         } else {
             path.addQuadCurve(to: CGPoint(x: bodyWidth - radius, y: height),
