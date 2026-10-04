@@ -65,15 +65,19 @@ struct PendingMessage: Codable, Identifiable {
 struct CompanionAPI {
     let base: String
     let token: String
-    func request<T: Decodable>(_ path: String, body: Data? = nil) async throws -> T {
+    func request<T: Decodable>(_ path: String, body: Data? = nil, method: String? = nil, timeout: TimeInterval = 180) async throws -> T {
         guard let url = URL(string: base), url.scheme == "https", url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
               token.count >= 32 else { throw ConnectionError.setup }
-        var request = URLRequest(url: url.appendingPathComponent(path))
-        request.timeoutInterval = 180
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var components = URLComponents(url: url.appendingPathComponent(String(parts[0])), resolvingAgainstBaseURL: false)!
+        if parts.count == 2 { components.percentEncodedQuery = String(parts[1]) }
+        guard let endpoint = components.url else { throw ConnectionError.setup }
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = timeout
+        request.httpMethod = method ?? (body == nil ? "GET" : "POST")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
-            request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = body
         }

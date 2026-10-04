@@ -12,12 +12,18 @@ struct CompanionApp: App {
     @StateObject private var space = PersonalSpace()
     @StateObject private var library = ReadingLibrary()
     @StateObject private var device = DeviceContext()
+    @StateObject private var shared = SharedSpace()
+    @StateObject private var phone = PhoneBridge()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app_appearance") private var appearance = "system"
     var body: some Scene {
         WindowGroup {
             CompanionTabs().environmentObject(model).environmentObject(space).tint(homeAccent)
                 .environmentObject(library).environmentObject(device)
+                .environmentObject(shared).environmentObject(phone)
+                .environment(\.locale, Locale(identifier: "zh_CN"))
+                .environment(\.calendar, SharedDates.calendar)
+                .environment(\.timeZone, SharedDates.calendar.timeZone)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
                     device.setActive(scenePhase == .active)
@@ -27,6 +33,7 @@ struct CompanionApp: App {
                         if ProcessInfo.processInfo.arguments.contains("--reset-draft") { UserDefaults.standard.removeObject(forKey: "chat_draft_v1") }
                         if ProcessInfo.processInfo.arguments.contains("--books") { library.addPreviewBook() }
                         model.isPreview = true
+                        shared.preview()
                         model.connected = true
                         model.discardPending()
                         model.messages = [
@@ -41,6 +48,20 @@ struct CompanionApp: App {
                     while !Task.isCancelled {
                         await model.refresh()
                         do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                    }
+                }
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    #if DEBUG
+                    guard !ProcessInfo.processInfo.arguments.contains("--ui-preview") else { return }
+                    #endif
+                    shared.migrate(space.moods)
+                    while !Task.isCancelled {
+                        if model.connected {
+                            await phone.tick(api: model.api, device: device)
+                            await shared.sync(api: model.api)
+                        }
+                        do { try await Task.sleep(for: .seconds(3)) } catch { return }
                     }
                 }
         }
@@ -74,14 +95,17 @@ struct CompanionTabs: View {
                 case .books:
                     BookshelfView(openChat: { path = [.chat] })
                 case .device:
-                    DeviceContextView(openChat: { path = [.chat] })
+                    PhonePermissionsView()
+                case .calendar:
+                    SharedCalendarView()
                 }
             }
         }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
-                if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
+                if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
+                else if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
                 else if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
             }
             #endif
@@ -108,13 +132,14 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat, books, device }
+enum CompanionRoute: Hashable { case chat, books, device, calendar }
 
 struct HomeView: View {
     @EnvironmentObject private var model: CompanionModel
     @EnvironmentObject private var space: PersonalSpace
     @EnvironmentObject private var library: ReadingLibrary
     @EnvironmentObject private var device: DeviceContext
+    @EnvironmentObject private var shared: SharedSpace
     @AppStorage("companion_name") private var name = "他"
     @AppStorage("relationship_caption") private var caption = "把日常，留在我们的小家。"
     @AppStorage("anniversary_enabled") private var anniversaryEnabled = false
@@ -125,8 +150,10 @@ struct HomeView: View {
     @State private var noteSheet = false
     @State private var moodEmoji = "🤍"
     @State private var moodNote = ""
+    @State private var moodID: String?
     @State private var noteText = ""
     @State private var timeline = false
+    private var todayMood: SharedEntry? { shared.on(.now).last { $0.actor == "user" && $0.kind == "mood" } }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -155,6 +182,16 @@ struct HomeView: View {
                             .glassSurface(in: RoundedRectangle(cornerRadius: 18), tint: homeAccent)
                     }
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                NavigationLink(value: CompanionRoute.calendar) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "calendar").font(.title2).foregroundStyle(homeAccent)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("我们的日历").font(.headline).foregroundStyle(.primary)
+                            Text("看见彼此的心情、小记与日程").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24))
+                }.buttonStyle(.plain).accessibilityIdentifier("home-calendar")
                 NavigationLink(value: CompanionRoute.books) {
                     HStack(spacing: 16) {
                         Image(systemName: "books.vertical").font(.title2).foregroundStyle(homeAccent)
@@ -170,15 +207,15 @@ struct HomeView: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("home-reading")
                 HStack { Text("今天，过得怎么样").font(.headline); Spacer(); Button { timeline = true } label: { Image(systemName: "calendar") }.accessibilityLabel("查看心情记录") }
                 HStack(spacing: 15) {
-                    Text(space.todayMood?.emoji ?? "🤍").font(.system(size: 32))
+                    Text(todayMood?.emoji ?? "🤍").font(.system(size: 32))
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(space.todayMood == nil ? "把今天的心情留在这里" : "今天的心情").font(.subheadline.weight(.medium))
-                        Text(space.todayMood?.note.isEmpty == false ? space.todayMood!.note : "每一种心情，都有它的位置。")
+                        Text(todayMood == nil ? "把今天的心情留在这里" : "今天的心情").font(.subheadline.weight(.medium))
+                        Text(todayMood?.text.isEmpty == false ? todayMood!.text : "每一种心情，都有它的位置。")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                     Spacer()
                     Button {
-                        moodEmoji = space.todayMood?.emoji ?? "🤍"; moodNote = space.todayMood?.note ?? ""; moodSheet = true
+                        moodEmoji = todayMood?.emoji ?? "🤍"; moodNote = todayMood?.text ?? ""; moodID = todayMood?.id; moodSheet = true
                     } label: { Image(systemName: "pencil").padding(10).background(homeWine.opacity(0.08), in: Circle()) }.accessibilityLabel("记录今天的心情")
                 }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 HStack { Text("留给我们的").font(.headline); Spacer(); Button("全部") { selection = 2 }.font(.subheadline) }
@@ -190,7 +227,7 @@ struct HomeView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "iphone").foregroundStyle(homeAccent)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("设备与隐私").font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            Text("他的手机权限").font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             Text(device.summary).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
@@ -228,16 +265,14 @@ struct HomeView: View {
                         ForEach(["🤍", "🥰", "😊", "🥺", "😔", "😤", "😴"], id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.segmented)
                     TextField("想记下一点什么？", text: $moodNote, axis: .vertical).lineLimit(3...6)
-                } header: { Text("今天的心情") } footer: { Text("保存在这台手机里。选择“和他说”会放入聊天草稿，由你发送。") }
-                Button("和他说") {
-                    space.addMood(moodEmoji, note: moodNote)
-                    draft = "我今天的心情是 \(moodEmoji)\(moodNote.isEmpty ? "" : "，" + moodNote)"
-                    moodSheet = false; selection = 1
-                }
+                } header: { Text("今天的心情") } footer: { Text("保存在双方共享日历，他可以查看。不会自动发送聊天消息；离线时先保存，连接后继续同步。") }
             }.navigationTitle("今天的心情").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { moodSheet = false } }
-                    ToolbarItem(placement: .confirmationAction) { Button("保存") { space.addMood(moodEmoji, note: moodNote); moodSheet = false } }
+                    ToolbarItem(placement: .confirmationAction) { Button("保存记录") {
+                        shared.saveMood(emoji: moodEmoji, note: moodNote, date: .now, id: moodID)
+                        moodSheet = false; Task { await shared.sync(api: model.api, force: true) }
+                    } }
                 }
         }.presentationDetents([.medium, .large])
     }
@@ -266,18 +301,7 @@ struct HomeView: View {
     }
     private var moodTimeline: some View {
         NavigationStack {
-            List {
-                if space.moods.isEmpty { ContentUnavailableView("先留下一天的心情", systemImage: "calendar") }
-                ForEach(space.moods) { mood in
-                    HStack(alignment: .top, spacing: 15) {
-                        Text(mood.emoji).font(.title)
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(mood.date, format: .dateTime.year().month().day().weekday()).font(.caption).foregroundStyle(.secondary)
-                            if !mood.note.isEmpty { Text(mood.note).textSelection(.enabled) }
-                        }
-                    }.padding(.vertical, 8)
-                }
-            }.navigationTitle("心情日历").navigationBarTitleDisplayMode(.inline)
+            SharedCalendarView()
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { timeline = false } } }
         }
     }

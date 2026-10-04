@@ -1,6 +1,32 @@
 import XCTest
 
 final class CompanionUITests: XCTestCase {
+    func testSharedCalendarShowsBothPeopleAndSavesWithoutChat() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--calendar", "--reset-draft"]
+        app.launch()
+        let add = app.buttons["记录我的心情"]
+        XCTAssertTrue(add.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["我们的日历"].firstMatch.exists)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["今天想慢一点，把心情留在这里。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["翻到一页喜欢的话"].exists)
+        app.swipeDown()
+        add.tap()
+        let field = app.textFields["只记录，也可以不用说出来"]
+        // Vertical TextField becomes a UITextView on iOS.
+        let input = field.exists ? field : app.textViews.firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 5)); input.tap(); input.typeText("My calendar record")
+        app.buttons["save-shared-mood"].tap()
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["My calendar record"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["聊天"].tap()
+        let composer = app.textViews["chat-composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        XCTAssertEqual(composer.value as? String, "")
+        XCTAssertFalse(app.staticTexts["My calendar record"].exists)
+    }
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview", "--reset-draft"]

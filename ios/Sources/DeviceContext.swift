@@ -21,6 +21,7 @@ final class DeviceContext: NSObject, ObservableObject {
     }
     deinit { NotificationCenter.default.removeObserver(self) }
     func setActive(_ value: Bool) { active = value; configure() }
+    func refresh() { sample() }
     private func configure() {
         UIDevice.current.isBatteryMonitoringEnabled = enabled && active
         if enabled && active { sample() }

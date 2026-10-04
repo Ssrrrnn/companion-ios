@@ -76,7 +76,7 @@ struct SettingsView: View {
                 Toggle("轻触反馈", isOn: $haptics)
                 if let error = space.imageError { Text(error).font(.caption).foregroundStyle(.red) }
             } header: { Text("聊天外观") }
-              footer: { Text("头像、壁纸、纪念日、心情、小纸条与手动收藏保存在这台手机里。") }
+              footer: { Text("头像、壁纸、纪念日、小纸条与手动收藏保存在手机里。心情记录进入双方共享日历，供他读取。") }
             Section {
                 TextField("HTTPS 服务地址", text: $base).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("连接密钥", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -96,8 +96,9 @@ struct SettingsView: View {
             }
             Section("一起做的事") {
                 NavigationLink("一起读书", value: CompanionRoute.books)
-                NavigationLink("设备与隐私", value: CompanionRoute.device)
-                Text("自主活动与酒馆设定尚未接入；不会在后台假装执行任务，也不会替换已有记忆与人格。")
+                NavigationLink("我们的日历", value: CompanionRoute.calendar)
+                NavigationLink("他的手机权限", value: CompanionRoute.device)
+                Text("日历、心情与手机状态通过真实工具连接。其他手机功能与酒馆设定尚未接入。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background { GlassWallpaper() }
