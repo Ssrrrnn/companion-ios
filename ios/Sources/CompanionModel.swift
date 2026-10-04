@@ -131,7 +131,7 @@ final class CompanionModel: ObservableObject {
             try data.write(to: voiceURL(id), options: [.atomic, .completeFileProtection])
             voiceDurations[id] = duration
             UserDefaults.standard.set(voiceDurations, forKey: voicesKey)
-        } catch { error = "文字已收到，但这条语音未能保存。" }
+        } catch { self.error = "文字已收到，但这条语音未能保存。" }
     }
     func hasAudio(_ id: String) -> Bool { voiceDurations[id] != nil && FileManager.default.fileExists(atPath: voiceURL(id).path) }
     func play(_ id: String) {
@@ -155,7 +155,7 @@ final class CompanionModel: ObservableObject {
                     do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
                 }
             }
-        } catch { stopAudio(); error = "这条语音暂时无法播放。" }
+        } catch { stopAudio(); self.error = "这条语音暂时无法播放。" }
     }
     func stopAudio() {
         playbackTask?.cancel(); playbackTask = nil

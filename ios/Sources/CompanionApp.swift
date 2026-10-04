@@ -155,12 +155,12 @@ struct HomeView: View {
     private var moodEditor: some View {
         NavigationStack {
             Form {
-                Section("今天的心情") {
+                Section {
                     Picker("心情", selection: $moodEmoji) {
                         ForEach(["🤍", "🥰", "😊", "🥺", "😔", "😤", "😴"], id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.segmented)
                     TextField("想记下一点什么？", text: $moodNote, axis: .vertical).lineLimit(3...6)
-                } footer: { Text("保存在这台手机里。选择“和他说”会放入聊天草稿，由你发送。") }
+                } header: { Text("今天的心情") } footer: { Text("保存在这台手机里。选择“和他说”会放入聊天草稿，由你发送。") }
                 Button("和他说") {
                     space.addMood(moodEmoji, note: moodNote)
                     draft = "我今天的心情是 \(moodEmoji)\(moodNote.isEmpty ? "" : "，" + moodNote)"
@@ -176,10 +176,10 @@ struct HomeView: View {
     private var noteEditor: some View {
         NavigationStack {
             List {
-                Section("写一张小纸条") {
+                Section {
                     TextField("下次一起做的事，或想留住的念头", text: $noteText, axis: .vertical).lineLimit(3...6)
                     Button("收好这张纸条") { space.addNote(noteText); noteText = "" }.disabled(noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } footer: { Text("小纸条保存在这台手机里。") }
+                } header: { Text("写一张小纸条") } footer: { Text("小纸条保存在这台手机里。") }
                 Section("已经收好的") {
                     ForEach(space.notes) { note in
                         VStack(alignment: .leading, spacing: 8) {
