@@ -1,8 +1,18 @@
-name: Build personal iOS app
+name: Build and publish personal iOS app
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/build-ios.yml'
+      - 'scripts/publish_altstore.py'
+      - 'RELEASE_NOTES.txt'
 permissions:
   contents: read
+concurrency:
+  group: ios-altstore-main
+  cancel-in-progress: false
 jobs:
   build:
     if: github.event.repository.private == false
@@ -10,12 +20,29 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - name: Install project generator
-        run: brew install xcodegen
-      - name: Build unsigned IPA
-        run: bash ios/build.sh
+      - run: brew install xcodegen
+      - run: bash ios/build.sh
+        env:
+          APP_BUILD_VERSION: '${{ github.run_number }}.${{ github.run_attempt }}'
       - uses: actions/upload-artifact@v6
         with:
           name: Companion-unsigned
           path: ios/build/Companion.ipa
           retention-days: 1
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v6
+        with:
+          name: Companion-unsigned
+          path: release
+      - run: python3 scripts/publish_altstore.py release/Companion.ipa
+        env:
+          GH_TOKEN: ${{ github.token }}

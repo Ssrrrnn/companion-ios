@@ -179,7 +179,7 @@ struct SettingsView: View {
             } header: { Text("连接现有伴侣") }
               footer: { Text("填写自己的伴侣服务地址与连接密钥。Claude、Fish Audio 密钥由服务端保存。") }
             Section("当前版本") {
-                Text("小家 · 0.1")
+                Text("小家 · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
                 Text("聊天、语音播放、日记和收藏。主动消息继续通过 QQ 或 Telegram 到达，打开小家可以查看。").font(.footnote)
             }
         }.navigationTitle("设置")

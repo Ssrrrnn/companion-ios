@@ -1,0 +1,25 @@
+{
+  "name": "小家 · 更新源",
+  "subtitle": "我们的小家，持续更新",
+  "website": "https://github.com/Ssrrrnn/companion-ios",
+  "iconURL": "https://raw.githubusercontent.com/Ssrrrnn/companion-ios/main/ios/Sources/Assets.xcassets/AppIcon.appiconset/Icon.png",
+  "tintColor": "#6E3B4D",
+  "apps": [
+    {
+      "name": "小家",
+      "bundleIdentifier": "com.ssrrrnn.companion",
+      "developerName": "Ssrrrnn",
+      "subtitle": "把日常，留在我们的小家。",
+      "localizedDescription": "个人 AI 伴侣客户端，支持聊天、语音播放、日记与收藏。需在设置中连接自己的伴侣服务。",
+      "iconURL": "https://raw.githubusercontent.com/Ssrrrnn/companion-ios/main/ios/Sources/Assets.xcassets/AppIcon.appiconset/Icon.png",
+      "tintColor": "#6E3B4D",
+      "category": "lifestyle",
+      "versions": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
