@@ -16,6 +16,15 @@
       "category": "lifestyle",
       "versions": [
         {
+          "version": "0.4.0",
+          "buildVersion": "13.1",
+          "minOSVersion": "18.0",
+          "size": 567313,
+          "localizedDescription": "聊天性能：增量缓存拆句结果，避免每个气泡重复拆分整段历史；语音进度不再刷新整个聊天，减少实时模糊和阴影。\n界面整理：移除首页“留下的话 / 接着聊”板块，调整首页层级，保留玻璃顶部、输入栏与悬浮导航。\n一起读书：导入 UTF-8 / UTF-16 TXT、Markdown 和带文字的 PDF（8 MB / 100 万字以内）；本地保存进度、书签、读书笔记，支持字号调整。\n选段共读：选中文字或分享当前页，预览片段与想法后放进聊天草稿，由你回车发送。不会自动上传整本书；AI 回复暂在聊天查看。\n设备与隐私：可选择读取前台电量、充电及低电量模式，手动分享本次状态；不持续追踪，不自动上传。\n健康数据、酒馆和服务端自主活动仍未接入；本版本不会申请健康权限或增加收费服务。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.4.0-build13.1/Companion.ipa",
+          "date": "2026-10-04T18:32:35Z"
+        },
+        {
           "version": "0.3.0",
           "buildVersion": "12.1",
           "minOSVersion": "18.0",
