@@ -3,6 +3,28 @@ import UIKit
 @testable import Companion
 
 final class ReadingRoomTests: XCTestCase {
+    @MainActor
+    func testDeleteRemovesOnlyChosenBookAndItsNotes() throws {
+        let previous = try? Data(contentsOf: ReadingDisk.index)
+        let first = ReadingBook(id: UUID(), title: "删这本", pageCount: 1)
+        let second = ReadingBook(id: UUID(), title: "留这本", pageCount: 1)
+        try ReadingDisk.saveIndex([first, second])
+        try JSONEncoder().encode(["第一页"]).write(to: ReadingDisk.url(first.id))
+        try JSONEncoder().encode(["保留正文"]).write(to: ReadingDisk.url(second.id))
+        defer {
+            try? FileManager.default.removeItem(at: ReadingDisk.url(first.id))
+            try? FileManager.default.removeItem(at: ReadingDisk.url(second.id))
+            if let previous { try? previous.write(to: ReadingDisk.index) }
+            else { try? FileManager.default.removeItem(at: ReadingDisk.index) }
+        }
+        let library = ReadingLibrary()
+        XCTAssertTrue(library.removeBook(first.id))
+        XCTAssertNil(library.book(first.id)); XCTAssertNotNil(library.book(second.id))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: ReadingDisk.url(first.id).path))
+        XCTAssertEqual(try ReadingDisk.loadPage(second.id, page: 0), "保留正文")
+        let saved = try JSONDecoder().decode([ReadingBook].self, from: Data(contentsOf: ReadingDisk.index))
+        XCTAssertEqual(saved.map(\.id), [second.id])
+    }
     func testStreamingDecoderPreservesGraphemesAcrossTinyChunks() throws {
         let text = String(repeating: "书页 e\u{301} 👩‍👩‍👧‍👧 🇨🇳\r\n", count: 50)
         let encodings: [(String.Encoding, [UInt8])] = [(.utf8, [0xEF, 0xBB, 0xBF]), (.utf16LittleEndian, [0xFF, 0xFE]), (.utf16BigEndian, [0xFE, 0xFF])]

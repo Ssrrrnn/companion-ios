@@ -35,6 +35,8 @@ def ipa_metadata(ipa):
             raise ValueError('Unexpected bundle identifier')
         if not str(info.get('NSCalendarsFullAccessUsageDescription', '')).strip():
             raise ValueError('Calendar access description is missing from the built IPA')
+        if not str(info.get('NSLocationWhenInUseUsageDescription', '')).strip():
+            raise ValueError('Location access description is missing from the built IPA')
         for name in names:
             if re.search(r'\.(app|appex)/Info.plist$', name):
                 data = plistlib.loads(archive.read(name))

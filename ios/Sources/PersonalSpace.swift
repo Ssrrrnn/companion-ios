@@ -41,6 +41,7 @@ final class PersonalSpace: ObservableObject {
     @Published private(set) var notes: [LittleNote] = []
     @Published private(set) var moods: [MoodEntry] = []
     @Published private(set) var avatar: UIImage?
+    @Published private(set) var userAvatar: UIImage?
     @Published private(set) var wallpaper: UIImage?
     @Published var imageError: String?
     private let defaults = UserDefaults.standard
@@ -50,6 +51,7 @@ final class PersonalSpace: ObservableObject {
         notes = read("little_notes_v1") ?? []
         moods = read("mood_entries_v1") ?? []
         avatar = loadImage("companion-avatar.jpg")
+        userAvatar = loadImage("user-avatar.jpg")
         wallpaper = loadImage("chat-wallpaper.jpg")
     }
     private func read<T: Decodable>(_ key: String) -> T? {
@@ -88,7 +90,7 @@ final class PersonalSpace: ObservableObject {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)) else { return nil }
         return UIImage(data: data)
     }
-    func setImage(_ item: PhotosPickerItem, wallpaper isWallpaper: Bool) async {
+    func setImage(_ item: PhotosPickerItem, wallpaper isWallpaper: Bool, userAvatar isUser: Bool = false) async {
         do {
             guard let data = try await item.loadTransferable(type: Data.self), let original = UIImage(data: data) else {
                 throw CocoaError(.fileReadCorruptFile)
@@ -102,17 +104,17 @@ final class PersonalSpace: ObservableObject {
                 original.draw(in: CGRect(origin: .zero, size: size))
             }
             guard let compressed = rendered.jpegData(compressionQuality: 0.85) else { throw CocoaError(.fileWriteUnknown) }
-            let url = directory.appendingPathComponent(isWallpaper ? "chat-wallpaper.jpg" : "companion-avatar.jpg")
+            let url = directory.appendingPathComponent(isWallpaper ? "chat-wallpaper.jpg" : isUser ? "user-avatar.jpg" : "companion-avatar.jpg")
             try compressed.write(to: url, options: [.atomic, .completeFileProtection])
-            if isWallpaper { wallpaper = rendered } else { avatar = rendered }
+            if isWallpaper { wallpaper = rendered } else if isUser { userAvatar = rendered } else { avatar = rendered }
             imageError = nil
         } catch { imageError = "这张照片没有保存成功，请重新选择。" }
     }
-    func removeImage(wallpaper isWallpaper: Bool) {
-        let url = directory.appendingPathComponent(isWallpaper ? "chat-wallpaper.jpg" : "companion-avatar.jpg")
+    func removeImage(wallpaper isWallpaper: Bool, userAvatar isUser: Bool = false) {
+        let url = directory.appendingPathComponent(isWallpaper ? "chat-wallpaper.jpg" : isUser ? "user-avatar.jpg" : "companion-avatar.jpg")
         do {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-            if isWallpaper { wallpaper = nil } else { avatar = nil }
+            if isWallpaper { wallpaper = nil } else if isUser { userAvatar = nil } else { avatar = nil }
             imageError = nil
         } catch { imageError = "暂时没能移除照片，请重试。" }
     }
@@ -121,18 +123,21 @@ final class PersonalSpace: ObservableObject {
 struct CompanionAvatar: View {
     @EnvironmentObject private var space: PersonalSpace
     @AppStorage("companion_name") private var name = "他"
+    @AppStorage("user_name") private var userName = "我"
     var size: CGFloat = 44
+    var user: Bool = false
+    private var displayName: String { user ? userName : name }
     var body: some View {
         Group {
-            if let image = space.avatar { Image(uiImage: image).resizable().scaledToFill() }
+            if let image = user ? space.userAvatar : space.avatar { Image(uiImage: image).resizable().scaledToFill() }
             else {
                 ZStack {
                     Circle().fill(.ultraThinMaterial)
                         .overlay(Circle().fill(homeAccent.opacity(0.16)))
-                    Text(String(name.prefix(1))).font(.system(size: size * 0.43, weight: .medium, design: .serif)).foregroundStyle(Color.primary)
+                    Text(String(displayName.prefix(1))).font(.system(size: size * 0.43, weight: .medium, design: .serif)).foregroundStyle(Color.primary)
                 }
             }
-        }.frame(width: size, height: size).clipShape(Circle()).accessibilityLabel("\(name)的头像")
+        }.frame(width: size, height: size).clipShape(Circle()).accessibilityLabel(user ? "我的头像" : "\(name)的头像")
     }
 }
 

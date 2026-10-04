@@ -43,18 +43,29 @@ extension View {
     func chatSurface(tint: Color) -> some View { modifier(ChatSurface(tint: tint)) }
 }
 
-/// Long lists use a translucent tint instead of hundreds of live blur layers.
-/// Fixed chrome still uses glassSurface; Reduce Transparency remains respected.
+/// Lazy chat rows use glass without the large per-row shadows of card surfaces.
 private struct ChatSurface: ViewModifier {
     let tint: Color
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    func body(content: Content) -> some View {
+    @ViewBuilder func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
-        content.background {
-            shape.fill(Color(uiColor: .secondarySystemGroupedBackground).opacity(reduceTransparency ? 1 : scheme == .dark ? 0.90 : 0.80))
-                .overlay(shape.fill(tint.opacity(scheme == .dark ? 0.25 : 0.14)))
-        }.overlay(shape.stroke(Color.white.opacity(scheme == .dark ? 0.14 : 0.70), lineWidth: 0.6).allowsHitTesting(false))
+        if reduceTransparency {
+            content.background(Color(uiColor: .secondarySystemGroupedBackground), in: shape)
+                .overlay(shape.stroke(tint.opacity(0.2), lineWidth: 0.8))
+        } else {
+            #if compiler(>=6.2)
+            if #available(iOS 26.0, *) { content.glassEffect(.regular.tint(tint.opacity(0.25)), in: shape) }
+            else { compatible(content, shape: shape) }
+            #else
+            compatible(content, shape: shape)
+            #endif
+        }
+    }
+    private func compatible(_ content: Content, shape: RoundedRectangle) -> some View {
+        content.background(.ultraThinMaterial, in: shape)
+            .overlay(shape.fill(tint.opacity(scheme == .dark ? 0.16 : 0.09)).allowsHitTesting(false))
+            .overlay(shape.stroke(LinearGradient(colors: [.white.opacity(scheme == .dark ? 0.35 : 0.82), .white.opacity(0.08), .white.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8).allowsHitTesting(false))
     }
 }
 

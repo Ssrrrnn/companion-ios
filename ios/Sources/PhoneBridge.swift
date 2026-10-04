@@ -10,6 +10,8 @@ struct PhoneSnapshot: Encodable {
     let calendar_read: Bool
     let calendar_write: Bool
     let events: [PhoneEvent]
+    var location_read: Bool = false
+    var location: PhoneLocation? = nil
 }
 struct PhoneAction: Codable, Identifiable, Sendable {
     let id: String
@@ -133,7 +135,7 @@ final class PhoneBridge: ObservableObject {
             else { error = nil }
         } catch { self.error = "系统没有授予日历访问权限。" }
     }
-    func tick(api: CompanionAPI, device: DeviceContext) async {
+    func tick(api: CompanionAPI, device: DeviceContext, location: LocationContext) async {
         guard !busy else { return }
         busy = true; defer { busy = false }
         do {
@@ -144,10 +146,13 @@ final class PhoneBridge: ObservableObject {
                 let events = shareCalendar && authorized ? await calendarIO.events(selected: selectedCalendars) : []
                 // Don't upload a fetch completed after the user revoked sharing.
                 guard version == revision else { return }
+                if location.enabled && location.authorized { _ = await location.request() }
+                guard version == revision, !Task.isCancelled else { return }
                 let snapshot = PhoneSnapshot(device_id: deviceID,
                     battery: device.enabled && device.level != nil ? PhoneBattery(level: device.level!, charging: device.charging, low_power: device.lowPower) : nil,
                     calendar_read: shareCalendar && authorized && !selectedCalendars.isEmpty,
-                    calendar_write: allowCalendarWrites && authorized && calendars.contains(where: { $0.id == writeCalendar && $0.writable }), events: events)
+                    calendar_write: allowCalendarWrites && authorized && calendars.contains(where: { $0.id == writeCalendar && $0.writable }), events: events,
+                    location_read: location.enabled && location.authorized, location: location.enabled && location.authorized ? location.value : nil)
                 let encoded = try JSONEncoder().encode(snapshot)
                 let _: PhoneOK = try await api.request("v1/phone/context", body: encoded, timeout: 15)
                 lastSnapshot = .now; syncedAt = .now
@@ -159,12 +164,26 @@ final class PhoneBridge: ObservableObject {
                 if let previous = receipts[action.id] { receipt = previous }
                 else {
                     do {
-                        guard allowCalendarWrites, authorized else { throw ConnectionError.server("自动添加日程未授权，已停止这次操作。") }
-                        try Task.checkCancellation()
-                        let eventID = try await calendarIO.create(action, calendarID: writeCalendar)
-                        receipt = PhoneReceipt(device_id: deviceID, success: true, event_id: eventID, message: "已通过手机日历保存。")
+                        if action.kind == "refresh_location" {
+                            guard location.enabled, location.authorized, let fresh = await location.request(), location.enabled, location.authorized else { throw ConnectionError.server("未取得授权的实时定位。") }
+                            try Task.checkCancellation()
+                            let events = shareCalendar && authorized ? await calendarIO.events(selected: selectedCalendars) : []
+                            guard location.enabled, location.authorized else { throw ConnectionError.server("定位分享已关闭。") }
+                            let snapshot = PhoneSnapshot(device_id: deviceID,
+                                battery: device.enabled && device.level != nil ? PhoneBattery(level: device.level!, charging: device.charging, low_power: device.lowPower) : nil,
+                                calendar_read: shareCalendar && authorized && !selectedCalendars.isEmpty,
+                                calendar_write: allowCalendarWrites && authorized && calendars.contains(where: { $0.id == writeCalendar && $0.writable }), events: events,
+                                location_read: true, location: fresh)
+                            let _: PhoneOK = try await api.request("v1/phone/context", body: JSONEncoder().encode(snapshot), timeout: 15)
+                            receipt = PhoneReceipt(device_id: deviceID, success: true, event_id: fresh.sampled_at, message: "手机已采样新的位置。")
+                        } else {
+                            guard allowCalendarWrites, authorized else { throw ConnectionError.server("自动添加日程未授权，已停止这次操作。") }
+                            try Task.checkCancellation()
+                            let eventID = try await calendarIO.create(action, calendarID: writeCalendar)
+                            receipt = PhoneReceipt(device_id: deviceID, success: true, event_id: eventID, message: "已通过手机日历保存。")
+                        }
                     } catch {
-                        receipt = PhoneReceipt(device_id: deviceID, success: false, event_id: "", message: "日程没有写入，请检查日历权限、目标日历和时间。")
+                        receipt = PhoneReceipt(device_id: deviceID, success: false, event_id: "", message: action.kind == "refresh_location" ? "没有取得新定位，请检查定位权限。" : "日程没有写入，请检查日历权限、目标日历和时间。")
                     }
                     receipts[action.id] = receipt
                     UserDefaults.standard.set(try JSONEncoder().encode(receipts), forKey: "phone_receipts_v1")
@@ -178,10 +197,21 @@ final class PhoneBridge: ObservableObject {
 }
 
 struct PhonePermissionsView: View {
+    @EnvironmentObject private var location: LocationContext
     @EnvironmentObject private var bridge: PhoneBridge
     @EnvironmentObject private var device: DeviceContext
     var body: some View {
         Form {
+            Section {
+                Toggle("允许他调用当前位置", isOn: $location.enabled)
+                    .onChange(of: location.enabled) { _, _ in bridge.batterySettingChanged() }
+                if let value = location.value, location.enabled {
+                    Text("精度约 \(Int(value.accuracy)) 米").font(.caption).foregroundStyle(.secondary)
+                    if let sampled = SharedDates.instant(value.sampled_at) { Text("采样：\(sampled.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
+                }
+                if let error = location.error { Text(error).font(.caption).foregroundStyle(.secondary) }
+            } header: { Text("定位") }
+              footer: { Text("先完成系统定位授权。他调用时会请求手机重新采样，包含时间和精度；小家需在前台。关闭或离线时不能当作实时位置。") }
             Section {
                 Toggle("允许他读取电量与充电状态", isOn: $device.enabled)
                     .onChange(of: device.enabled) { _, _ in bridge.batterySettingChanged() }

@@ -1,6 +1,26 @@
 import XCTest
 
 final class CompanionUITests: XCTestCase {
+    func testAvatarsAndActivityPlanAreVisible() {
+        let app = launch()
+        XCTAssertTrue(app.otherElements["我的头像"].firstMatch.exists || app.images["我的头像"].firstMatch.exists || app.staticTexts["我"].firstMatch.exists)
+        app.navigationBars.buttons.firstMatch.tap()
+        let activity = app.buttons["home-activity"]
+        XCTAssertTrue(activity.waitForExistence(timeout: 5)); activity.tap()
+        XCTAssertTrue(app.staticTexts["今天想做的事"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["继续读一页书"].exists)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["已完成"].waitForExistence(timeout: 5))
+    }
+    func testBookCanBeDeletedFromShelf() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "--books", "--reset-draft"]; app.launch()
+        let book = app.staticTexts["共读示例"].firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 15)); book.press(forDuration: 1.2)
+        let delete = app.buttons["删除书籍"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 5)); delete.tap()
+        app.alerts.buttons["删除"].tap()
+        XCTAssertTrue(app.staticTexts["把第一本书放到这里"].waitForExistence(timeout: 5))
+    }
     func testSharedCalendarShowsBothPeopleAndSavesWithoutChat() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview", "--calendar", "--reset-draft"]

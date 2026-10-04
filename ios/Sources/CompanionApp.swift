@@ -14,6 +14,9 @@ struct CompanionApp: App {
     @StateObject private var device = DeviceContext()
     @StateObject private var shared = SharedSpace()
     @StateObject private var phone = PhoneBridge()
+    @StateObject private var reading = ReadingSync()
+    @StateObject private var activity = ActivitySpace()
+    @StateObject private var location = LocationContext()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app_appearance") private var appearance = "system"
     var body: some Scene {
@@ -21,19 +24,21 @@ struct CompanionApp: App {
             CompanionTabs().environmentObject(model).environmentObject(space).tint(homeAccent)
                 .environmentObject(library).environmentObject(device)
                 .environmentObject(shared).environmentObject(phone)
+                .environmentObject(reading).environmentObject(activity).environmentObject(location)
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environment(\.calendar, SharedDates.calendar)
                 .environment(\.timeZone, SharedDates.calendar.timeZone)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
                     device.setActive(scenePhase == .active)
-                    guard scenePhase == .active else { model.stopAudio(); return }
+                    guard scenePhase == .active else { model.stopAudio(); location.background(); return }
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
                         if ProcessInfo.processInfo.arguments.contains("--reset-draft") { UserDefaults.standard.removeObject(forKey: "chat_draft_v1") }
                         if ProcessInfo.processInfo.arguments.contains("--books") { library.addPreviewBook() }
                         model.isPreview = true
                         shared.preview()
+                        reading.preview(library); activity.preview()
                         model.connected = true
                         model.discardPending()
                         model.messages = [
@@ -58,10 +63,23 @@ struct CompanionApp: App {
                     shared.migrate(space.moods)
                     while !Task.isCancelled {
                         if model.connected {
-                            await phone.tick(api: model.api, device: device)
+                            await phone.tick(api: model.api, device: device, location: location)
                             await shared.sync(api: model.api)
                         }
                         do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                    }
+                }
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    #if DEBUG
+                    guard !ProcessInfo.processInfo.arguments.contains("--ui-preview") else { return }
+                    #endif
+                    while !Task.isCancelled {
+                        if model.connected {
+                            await reading.sync(api: model.api, library: library)
+                            await activity.sync(api: model.api)
+                        }
+                        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
                     }
                 }
         }
@@ -98,13 +116,16 @@ struct CompanionTabs: View {
                     PhonePermissionsView()
                 case .calendar:
                     SharedCalendarView()
+                case .activity:
+                    CompanionActivityView()
                 }
             }
         }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
-                if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
+                if ProcessInfo.processInfo.arguments.contains("--activity") && path.isEmpty { path = [.activity] }
+                else if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
                 else if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
                 else if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
             }
@@ -132,9 +153,10 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat, books, device, calendar }
+enum CompanionRoute: Hashable { case chat, books, device, calendar, activity }
 
 struct HomeView: View {
+    @EnvironmentObject private var activity: ActivitySpace
     @EnvironmentObject private var model: CompanionModel
     @EnvironmentObject private var space: PersonalSpace
     @EnvironmentObject private var library: ReadingLibrary
@@ -174,7 +196,9 @@ struct HomeView: View {
                             }.padding(.top, 8)
                         }
                     }
-                    Text("回到我们的小家").font(.system(.title, design: .serif).weight(.medium))
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text(activity.welcome ?? HomeGreeting.text(at: context.date, name: name)).font(.system(.title, design: .serif).weight(.medium))
+                    }
                     Text(caption).font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                     Button { selection = model.connected ? 1 : 3 } label: {
                         HStack { Text(model.connected ? "去找\(name)" : "连接我们的小家"); Spacer(); Image(systemName: "arrow.up.right") }
@@ -182,6 +206,16 @@ struct HomeView: View {
                             .glassSurface(in: RoundedRectangle(cornerRadius: 18), tint: homeAccent)
                     }
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                NavigationLink(value: CompanionRoute.activity) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "sparkles").font(.title2).foregroundStyle(homeAccent)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("他的日常").font(.headline).foregroundStyle(.primary)
+                            Text("今日计划 · 醒来后的行动与随笔").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24))
+                }.buttonStyle(.plain).accessibilityIdentifier("home-activity")
                 NavigationLink(value: CompanionRoute.calendar) {
                     HStack(spacing: 16) {
                         Image(systemName: "calendar").font(.title2).foregroundStyle(homeAccent)

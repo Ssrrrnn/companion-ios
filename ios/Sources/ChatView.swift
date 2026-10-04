@@ -62,11 +62,11 @@ struct ChatView: View {
                     }
                     ForEach(model.chatRows) { row in
                         let piece = row.piece
-                        bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil)
+                        bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil, showAvatar: row.startsGroup)
                             .padding(.top, row.startsGroup ? 14 : 7).id(piece.anchor)
                     }
                     if let pending = model.pending {
-                        bubble(Message(id: pending.id.uuidString, role: "user", text: pending.text))
+                        bubble(Message(id: pending.id.uuidString, role: "user", text: pending.text), showAvatar: true)
                             .padding(.top, 12)
                         HStack {
                             Spacer()
@@ -170,11 +170,15 @@ struct ChatView: View {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
     }
     private var chatBackground: some View { GlassWallpaper() }
-    private func bubble(_ message: Message, voiceID: String? = nil) -> some View {
+    private func bubble(_ message: Message, voiceID: String? = nil, showAvatar: Bool = false) -> some View {
         let outgoing = message.role == "user"
         let content = QuotedText(message.text)
-        return HStack(alignment: .bottom, spacing: 0) {
+        return HStack(alignment: .top, spacing: 8) {
             if outgoing { Spacer(minLength: 45) }
+            if !outgoing {
+                if showAvatar { CompanionAvatar(size: 32).padding(.top, 5) }
+                else { Color.clear.frame(width: 32, height: 1).accessibilityHidden(true) }
+            }
             VStack(alignment: .leading, spacing: 9) {
                 if let quote = content.quote {
                     VStack(alignment: .leading, spacing: 4) {
@@ -190,14 +194,17 @@ struct ChatView: View {
             .padding(.vertical, 12).padding(.horizontal, 16)
             .foregroundStyle(Color.primary)
             .chatSurface(tint: outgoing ? palette.color : .clear)
-            .frame(maxWidth: min(520, width * 0.78), alignment: outgoing ? .trailing : .leading)
+            .frame(maxWidth: min(520, width * 0.68), alignment: outgoing ? .trailing : .leading)
             .contextMenu {
                 Button { replyingTo = message; focused = true } label: { Label("回复这句", systemImage: "arrowshape.turn.up.left") }
                 Button { UIPasteboard.general.string = content.body } label: { Label("复制", systemImage: "doc.on.doc") }
                 Button { space.toggleMoment(message); feedback() } label: { Label(space.isSaved(message.id) ? "取消收藏" : "收藏这句", systemImage: space.isSaved(message.id) ? "heart.slash" : "heart") }
                 ShareLink(item: content.body) { Label("分享", systemImage: "square.and.arrow.up") }
             }
-            if !outgoing { Spacer(minLength: 45) }
+            if outgoing {
+                if showAvatar { CompanionAvatar(size: 32, user: true).padding(.top, 5) }
+                else { Color.clear.frame(width: 32, height: 1).accessibilityHidden(true) }
+            } else { Spacer(minLength: 45) }
         }
     }
     private func audioBar(_ id: String, outgoing: Bool) -> some View {

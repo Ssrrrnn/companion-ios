@@ -47,3 +47,16 @@ App 前台自动同步、接收任务；iOS 暂停 App 后不能保证即时执�
 文件上限提高到 200 MB，正文上限提高到 2000 万字。TXT / Markdown 以 64 KB 字节块读取，保留跨块的 UTF-8 / UTF-16 字符和组合表情；PDF 从文件逐页提取文字。导入时显示进度。
 
 新导入的书存为 UTF-8 正文和页偏移索引；阅读只读取当前页，不在内存中解码整本书。旧 JSON 格式书籍继续兼容，进度、书签、笔记保留。仍仅支持 UTF-8 / UTF-16 TXT、Markdown 和带文字的 PDF；扫描 PDF、EPUB 暂不支持。整书只保存在手机，和伴侣共读仍只发送选定片段。
+## Version 0.6 · independent time and shared reading
+
+The existing Railway companion now hosts a durable heartbeat inspired by [claude-cant-sleep](https://github.com/reneyuxi0402/claude-cant-sleep): after 15 minutes without user chat, roughly every 50 minutes (2 hours at 00:00–06:00 Beijing), it chooses one available activity, actually performs it, saves its own mood and daily intentions, and records results. PostgreSQL leases prevent overlapping wakeups and survive deployment. It uses the existing model/API and therefore consumes that API's normal tokens; it is not Claude Code ScheduleWakeup. A pause control is available in His Day.
+
+Available actions are reading uploaded pages, public encyclopedia lookup with source links, writing a saved personal note, and reviewing existing memories without editing them. Chat also receives real structured tools for these actions. No arbitrary shell, accounts, spending, email access or unrelated phone data is granted. Plans, starting entries, successful receipts, empty searches and failures are visibly distinct. Daily plans are also archived as activity entries.
+
+Imported books are automatically synced to the owner-only backend in batches of 20 pages while the app is foregrounded. Both participants have separate progress; the companion must receive the next page and save a response before its progress advances. It can keep reading already-synced pages while the app is closed. Unsynced pages need another foreground session. Whole book text is now stored in the existing PostgreSQL; user bookmarks/notes remain local. Long-press a book to delete its local data and queue removal of shared server text; tombstones prevent uploads in flight from restoring it. Original imported files and already-written activity reflections remain.
+
+Chat bubbles use native Liquid Glass where the SDK/system support it, with translucent material on iOS 18 and an opaque accessibility fallback. The first sentence of each speaker group has an avatar; both avatars and names are editable. Home welcomes change by Beijing time and by saved companion activity.
+
+Location uses When-In-Use authorization. A real structured location call asks the foreground phone to sample with Core Location and acknowledges only after the new timestamped coordinates and accuracy reach the server. Closed/offline phones return last-known/unavailable states, never fabricated real-time positions. No background tracking or HealthKit is enabled.
+
+[Tidal_Echo](https://github.com/anhe2021212-spec/Tidal_Echo) was reviewed for later in-app voice calling: call lifecycle, speech input and TTS playback. No implementation code was copied; this release does not ship calls, CallKit, microphone or speech-recognition permissions.

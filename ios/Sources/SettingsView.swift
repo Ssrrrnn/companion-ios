@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject private var model: CompanionModel
     @EnvironmentObject private var space: PersonalSpace
     @AppStorage("companion_name") private var name = "他"
+    @AppStorage("user_name") private var userName = "我"
     @AppStorage("relationship_caption") private var caption = "把日常，留在我们的小家。"
     @AppStorage("anniversary_enabled") private var anniversaryEnabled = false
     @AppStorage("anniversary_date") private var anniversary = Date.now.timeIntervalSince1970
@@ -19,6 +20,7 @@ struct SettingsView: View {
     @State private var connecting = false
     @State private var saved = false
     @State private var avatarItem: PhotosPickerItem?
+    @State private var userAvatarItem: PhotosPickerItem?
     @State private var wallpaperItem: PhotosPickerItem?
     var body: some View {
         Form {
@@ -33,6 +35,16 @@ struct SettingsView: View {
                 TextField("小家的签名", text: $caption, axis: .vertical).lineLimit(1...3)
                 if space.avatar != nil { Button("恢复文字头像") { space.removeImage(wallpaper: false) } }
             } header: { Text("我们的小家") }
+            Section("我的资料") {
+                HStack(spacing: 18) {
+                    CompanionAvatar(size: 62, user: true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("我的名字", text: $userName).font(.headline)
+                        PhotosPicker("选择我的头像", selection: $userAvatarItem, matching: .images).font(.subheadline)
+                    }
+                }.padding(.vertical, 6)
+                if space.userAvatar != nil { Button("恢复我的文字头像") { space.removeImage(wallpaper: false, userAvatar: true) } }
+            }
             Section("我们的纪念日") {
                 Toggle("记住相遇的日子", isOn: $anniversaryEnabled)
                     .onChange(of: anniversaryEnabled) { _, enabled in
@@ -97,13 +109,15 @@ struct SettingsView: View {
             Section("一起做的事") {
                 NavigationLink("一起读书", value: CompanionRoute.books)
                 NavigationLink("我们的日历", value: CompanionRoute.calendar)
+                NavigationLink("他的日常与自主唤醒", value: CompanionRoute.activity)
                 NavigationLink("他的手机权限", value: CompanionRoute.device)
-                Text("日历、心情与手机状态通过真实工具连接。其他手机功能与酒馆设定尚未接入。")
+                Text("自主活动在服务器运行；手机定位与日历动作需要小家在前台。通话与酒馆尚未接入。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background { GlassWallpaper() }
             .navigationTitle("设置").toolbarBackground(.hidden, for: .navigationBar)
             .onChange(of: avatarItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: false) } } }
+            .onChange(of: userAvatarItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: false, userAvatar: true) } } }
             .onChange(of: wallpaperItem) { _, item in if let item { Task { await space.setImage(item, wallpaper: true) } } }
     }
 }

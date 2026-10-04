@@ -146,6 +146,19 @@ final class ReadingLibrary: ObservableObject {
         }
     }
     func book(_ id: UUID) -> ReadingBook? { books.first { $0.id == id } }
+    @discardableResult
+    func removeBook(_ id: UUID) -> Bool {
+        guard books.contains(where: { $0.id == id }) else { return false }
+        let updated = books.filter { $0.id != id }
+        do {
+            // Save the shelf first. Only files belonging to this UUID are removed.
+            try ReadingDisk.saveIndex(updated); books = updated
+            for url in [ReadingDisk.url(id), ReadingDisk.pageFolder(id)] {
+                if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
+            }
+            error = nil; return true
+        } catch { self.error = "这本书没有删除成功，请重试。"; return false }
+    }
     func importBook(_ url: URL) async {
         guard !busy else { return }
         busy = true; error = nil; importProgress = 0
@@ -184,18 +197,22 @@ final class ReadingLibrary: ObservableObject {
 
 struct BookshelfView: View {
     @EnvironmentObject private var library: ReadingLibrary
+    @EnvironmentObject private var reading: ReadingSync
+    @AppStorage("companion_name") private var name = "他"
     var openChat: () -> Void
     @State private var importing = false
+    @State private var deleting: ReadingBook?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("在同一句话里，待一会儿。").font(.system(.title2, design: .serif))
-                Text("书和笔记只存在手机里。想一起读时，把选定的片段放进聊天，再由你发送。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
+                Text("导入后分批同步正文，让他也能自己读。你们各自记进度，他的感想会留在「他的日常」。本地书签和笔记仍存在手机里。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                 Button { importing = true } label: {
                     Label(library.busy ? "正在整理书页 · \(library.importProgress)%" : "从文件导入一本书", systemImage: "plus")
                         .frame(maxWidth: .infinity).padding(17).glassSurface(in: RoundedRectangle(cornerRadius: 20), tint: homeAccent)
                 }.disabled(library.busy).accessibilityIdentifier("import-book")
                 Text("TXT、Markdown、带文字的 PDF · \(ReadingLimits.description)").font(.caption).foregroundStyle(.secondary)
+                if let error = reading.error { Text(error).font(.caption).foregroundStyle(.secondary) }
                 if let error = library.error { Text(error).font(.caption).foregroundStyle(.red) }
                 if library.books.isEmpty {
                     ContentUnavailableView("把第一本书放到这里", systemImage: "books.vertical", description: Text("选一本书，阅读进度和笔记会留在这里。"))
@@ -211,10 +228,18 @@ struct BookshelfView: View {
                                 Text(book.title).font(.headline).foregroundStyle(.primary).lineLimit(2)
                                 Text("第 \(book.page + 1) / \(book.pageCount) 页 · \(book.notes.count) 条笔记").font(.caption).foregroundStyle(.secondary)
                                 ProgressView(value: Double(book.page + 1), total: Double(max(1, book.pageCount))).tint(homeAccent)
+                                if let progress = reading.progress(book.id) {
+                                    Text(progress.hisProgress).font(.caption).foregroundStyle(homeAccent)
+                                    ProgressView(value: Double(max(0, progress.assistant_page + 1)), total: Double(max(1, book.pageCount))).tint(homeAccent.opacity(0.65))
+                                    if progress.received < book.pageCount { Text("共读正文同步：\(progress.received) / \(book.pageCount) 页").font(.caption2).foregroundStyle(.secondary) }
+                                } else { Text("等待同步给\(name)").font(.caption).foregroundStyle(.secondary) }
                             }
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24))
                     }.buttonStyle(.plain).accessibilityIdentifier("book-\(book.id)")
+                        .contextMenu {
+                            Button(role: .destructive) { deleting = book } label: { Label("删除书籍", systemImage: "trash") }
+                        }
                 }
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
@@ -223,6 +248,13 @@ struct BookshelfView: View {
                 #endif
             }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
         }.background { GlassWallpaper() }.navigationTitle("一起读书").navigationBarTitleDisplayMode(.inline)
+            .alert("删除这本书？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+                Button("取消", role: .cancel) { deleting = nil }
+                Button("删除", role: .destructive) {
+                    if let book = deleting, library.removeBook(book.id) { reading.delete(book.id) }
+                    deleting = nil
+                }
+            } message: { Text("会删除这本书的本地正文、进度、书签和笔记，并在连接后删除服务端共读正文。原始导入文件不受影响。已写下的活动感想保留。") }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, .pdf, UTType(filenameExtension: "md") ?? .plainText]) { result in
                 switch result {
                 case .success(let url): Task { await library.importBook(url) }
@@ -236,6 +268,8 @@ struct BookReaderView: View {
     let bookID: UUID
     var openChat: () -> Void
     @EnvironmentObject private var library: ReadingLibrary
+    @EnvironmentObject private var reading: ReadingSync
+    @EnvironmentObject private var activity: ActivitySpace
     @AppStorage("chat_draft_v1") private var draft = ""
     @AppStorage("reading_font_size") private var fontSize = 19.0
     @State private var passage = ""
@@ -264,6 +298,9 @@ struct BookReaderView: View {
                                     if book.bookmarks.contains(page) { book.bookmarks.remove(page) } else { book.bookmarks.insert(page) }
                                 }
                             } label: { Image(systemName: book?.bookmarks.contains(page) == true ? "bookmark.fill" : "bookmark") }.accessibilityLabel("标记这一页")
+                        }
+                        if let progress = reading.progress(bookID) {
+                            Text("我读到第 \(page + 1) 页 · \(progress.hisProgress)").font(.caption).foregroundStyle(homeAccent)
                         }
                         SelectablePassage(text: passage, fontSize: fontSize, selection: $selected)
                         Text("长按选中文字，可以只聊选中的那一段。").font(.caption).foregroundStyle(.secondary)
@@ -320,7 +357,7 @@ struct BookReaderView: View {
                         draft = draft.isEmpty ? message : draft + "\n\n" + message
                         saveNote(); sharing = false; openChat()
                     }.accessibilityIdentifier("reading-to-draft")
-                } footer: { Text("不上传整本书；只有草稿里显示的内容会在你发送后交给现有伴侣服务。AI 的回应在聊天里查看，暂未做书内自动回批注。") }
+                } footer: { Text("共读正文会自动分批同步，让他能独立阅读。这里只把选定片段放入聊天草稿，仍由你发送。") }
             }.navigationTitle("一起读这一段").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { sharing = false } } }
         }
@@ -348,6 +385,16 @@ struct BookReaderView: View {
                             Text(note.excerpt).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                             Text(note.text).textSelection(.enabled)
                         }.padding(.vertical, 6)
+                    }
+                }
+                Section("他的读书感想") {
+                    let notes = activity.activities.filter { $0.kind == "reading" && $0.evidence.book_id?.lowercased() == bookID.uuidString.lowercased() }
+                    if notes.isEmpty { Text("最近同步的记录里还没有他的感想；更多日期可以到他的日常查看。").foregroundStyle(.secondary) }
+                    ForEach(notes) { note in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(note.title).font(.caption).foregroundStyle(.secondary)
+                            Text(note.text).textSelection(.enabled)
+                        }
                     }
                 }
             }.navigationTitle("书签与笔记").navigationBarTitleDisplayMode(.inline)
