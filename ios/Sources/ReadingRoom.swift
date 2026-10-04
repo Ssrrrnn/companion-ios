@@ -21,10 +21,11 @@ struct ReadingBook: Codable, Identifiable {
 }
 
 enum ReadingError: LocalizedError {
-    case tooLarge, unreadable, protectedPDF
+    case tooLarge, tooManyCharacters, unreadable, protectedPDF
     var errorDescription: String? {
         switch self {
-        case .tooLarge: return "先选一本 8 MB 以内、100 万字以内的书。"
+        case .tooLarge: return "文件超过 200 MB，请先拆分成几本导入。"
+        case .tooManyCharacters: return "正文超过 2000 万字，请先按卷拆分后导入。"
         case .unreadable: return "没有读到文字。支持 UTF-8 / UTF-16 的 TXT、Markdown 和带文字的 PDF；扫描版 PDF、EPUB 暂不支持。"
         case .protectedPDF: return "这本 PDF 已加密，先导出不加密的文字版本。"
         }
@@ -60,43 +61,75 @@ enum ReadingDisk {
     }
     static var index: URL { folder.appendingPathComponent("index.json") }
     static func url(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".json") }
+    static func pageFolder(_ id: UUID) -> URL { folder.appendingPathComponent(id.uuidString + ".pages", isDirectory: true) }
     static func saveIndex(_ books: [ReadingBook]) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try JSONEncoder().encode(books).write(to: index, options: [.atomic, .completeFileProtection])
     }
-    static func importBook(_ source: URL) throws -> ReadingBook {
+    static func importBook(_ source: URL, progress: @escaping @Sendable (Int) -> Void = { _ in }) throws -> ReadingBook {
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 8 * 1024 * 1024 else { throw ReadingError.tooLarge }
-        let data = try Data(contentsOf: source)
-        guard data.count <= 8 * 1024 * 1024 else { throw ReadingError.tooLarge }
-        let text: String
-        if source.pathExtension.lowercased() == "pdf" {
-            guard let pdf = PDFDocument(data: data) else { throw ReadingError.unreadable }
-            guard !pdf.isLocked else { throw ReadingError.protectedPDF }
-            var extracted = "", length = 0
-            for page in 0..<pdf.pageCount {
-                let passage = (pdf.page(at: page)?.string ?? "") + "\n\n"
-                length += passage.count
-                guard length <= 1_000_000 else { throw ReadingError.tooLarge }
-                extracted += passage
-            }
-            text = extracted
-        } else {
-            guard let decoded = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { throw ReadingError.unreadable }
-            text = decoded
+        guard size <= ReadingLimits.fileBytes else { throw ReadingError.tooLarge }
+        let id = UUID()
+        let temporary = folder.appendingPathComponent(".import-" + id.uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let writer = try ReadingPageWriter(folder: temporary)
+        var lastProgress = -1
+        func report(_ value: Int) {
+            let value = min(99, max(0, value))
+            if value != lastProgress { lastProgress = value; progress(value) }
         }
-        guard text.count <= 1_000_000 else { throw ReadingError.tooLarge }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ReadingError.unreadable }
-        let pages = ReadingText.pages(text)
-        let book = ReadingBook(id: UUID(), title: String(source.deletingPathExtension().lastPathComponent.prefix(100)), pageCount: pages.count)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try JSONEncoder().encode(pages).write(to: url(book.id), options: [.atomic, .completeFileProtection])
-        return book
+        report(0)
+        if source.pathExtension.lowercased() == "pdf" {
+            // PDFKit opens the source file; no full PDF Data or concatenated body.
+            guard let pdf = PDFDocument(url: source) else { throw ReadingError.unreadable }
+            guard !pdf.isLocked else { throw ReadingError.protectedPDF }
+            for page in 0..<pdf.pageCount {
+                let passage = autoreleasepool { pdf.page(at: page)?.string ?? "" }
+                if !passage.isEmpty { try writer.append(passage + "\n\n") }
+                report((page + 1) * 100 / max(1, pdf.pageCount))
+            }
+        } else {
+            let sourceFile = try FileHandle(forReadingFrom: source)
+            defer { try? sourceFile.close() }
+            var decoder = ReadingUTFDecoder(), read = 0
+            while let chunk = try sourceFile.read(upToCount: 64 * 1024), !chunk.isEmpty {
+                read += chunk.count
+                guard read <= ReadingLimits.fileBytes else { throw ReadingError.tooLarge }
+                try writer.append(decoder.consume(chunk))
+                report(read * 100 / max(1, size))
+            }
+            try writer.append(decoder.consume(Data(), final: true))
+        }
+        let count = try writer.finish(folder: temporary)
+        try FileManager.default.moveItem(at: temporary, to: pageFolder(id))
+        progress(100)
+        return ReadingBook(id: id, title: String(source.deletingPathExtension().lastPathComponent.prefix(100)), pageCount: count)
     }
     static func loadPages(_ id: UUID) throws -> [String] {
         try JSONDecoder().decode([String].self, from: Data(contentsOf: url(id)))
+    }
+    static func loadPage(_ id: UUID, page: Int) throws -> String {
+        let storage = pageFolder(id)
+        if !FileManager.default.fileExists(atPath: storage.path) {
+            // Legacy imports remain readable, without rewriting existing books.
+            let old = try loadPages(id)
+            guard old.indices.contains(page) else { throw ReadingError.unreadable }
+            return old[page]
+        }
+        let index = try JSONDecoder().decode(ReadingPageIndex.self, from: Data(contentsOf: storage.appendingPathComponent("pages.json")))
+        guard page >= 0, page < index.offsets.count - 1 else { throw ReadingError.unreadable }
+        let start = index.offsets[page], end = index.offsets[page + 1]
+        let fileURL = storage.appendingPathComponent("text.utf8")
+        let size = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard start < end, end <= UInt64(size), end - start <= UInt64(ReadingLimits.fileBytes) else { throw ReadingError.unreadable }
+        let file = try FileHandle(forReadingFrom: fileURL)
+        defer { try? file.close() }
+        try file.seek(toOffset: start)
+        guard let data = try file.read(upToCount: Int(end - start)), data.count == Int(end - start),
+              let text = String(data: data, encoding: .utf8) else { throw ReadingError.unreadable }
+        return text
     }
 }
 
@@ -104,6 +137,7 @@ enum ReadingDisk {
 final class ReadingLibrary: ObservableObject {
     @Published private(set) var books: [ReadingBook] = []
     @Published var busy = false
+    @Published private(set) var importProgress = 0
     @Published var error: String?
     init() {
         if FileManager.default.fileExists(atPath: ReadingDisk.index.path) {
@@ -114,12 +148,16 @@ final class ReadingLibrary: ObservableObject {
     func book(_ id: UUID) -> ReadingBook? { books.first { $0.id == id } }
     func importBook(_ url: URL) async {
         guard !busy else { return }
-        busy = true; error = nil
+        busy = true; error = nil; importProgress = 0
         defer { busy = false }
         do {
-            let book = try await Task.detached(priority: .userInitiated) { try ReadingDisk.importBook(url) }.value
+            let report: @Sendable (Int) -> Void = { [weak self] value in
+                Task { @MainActor [weak self] in self?.importProgress = value }
+            }
+            let book = try await Task.detached(priority: .userInitiated) { try ReadingDisk.importBook(url, progress: report) }.value
             let updated = [book] + books
-            try ReadingDisk.saveIndex(updated); books = updated
+            do { try ReadingDisk.saveIndex(updated); books = updated }
+            catch { try? FileManager.default.removeItem(at: ReadingDisk.pageFolder(book.id)); throw error }
         } catch { self.error = error.localizedDescription }
     }
     func update(_ id: UUID, change: (inout ReadingBook) -> Void) {
@@ -154,12 +192,13 @@ struct BookshelfView: View {
                 Text("在同一句话里，待一会儿。").font(.system(.title2, design: .serif))
                 Text("书和笔记只存在手机里。想一起读时，把选定的片段放进聊天，再由你发送。").font(.subheadline).foregroundStyle(.secondary).lineSpacing(4)
                 Button { importing = true } label: {
-                    Label(library.busy ? "正在整理书页" : "从文件导入一本书", systemImage: "plus")
+                    Label(library.busy ? "正在整理书页 · \(library.importProgress)%" : "从文件导入一本书", systemImage: "plus")
                         .frame(maxWidth: .infinity).padding(17).glassSurface(in: RoundedRectangle(cornerRadius: 20), tint: homeAccent)
                 }.disabled(library.busy).accessibilityIdentifier("import-book")
+                Text("TXT、Markdown、带文字的 PDF · \(ReadingLimits.description)").font(.caption).foregroundStyle(.secondary)
                 if let error = library.error { Text(error).font(.caption).foregroundStyle(.red) }
                 if library.books.isEmpty {
-                    ContentUnavailableView("把第一本书放到这里", systemImage: "books.vertical", description: Text("TXT、Markdown、带文字的 PDF · 最多 8 MB"))
+                    ContentUnavailableView("把第一本书放到这里", systemImage: "books.vertical", description: Text("选一本书，阅读进度和笔记会留在这里。"))
                 }
                 ForEach(library.books.sorted { $0.lastRead > $1.lastRead }) { book in
                     NavigationLink {
@@ -199,24 +238,26 @@ struct BookReaderView: View {
     @EnvironmentObject private var library: ReadingLibrary
     @AppStorage("chat_draft_v1") private var draft = ""
     @AppStorage("reading_font_size") private var fontSize = 19.0
-    @State private var pages: [String] = []
+    @State private var passage = ""
+    @State private var loading = true
     @State private var selected = ""
     @State private var sharing = false
     @State private var notesVisible = false
     @State private var thought = ""
     @State private var loadError: String?
     private var book: ReadingBook? { library.book(bookID) }
-    private var page: Int { min(max(0, book?.page ?? 0), max(0, pages.count - 1)) }
-    private var excerpt: String { selected.isEmpty ? (pages.isEmpty ? "" : pages[page]) : selected }
+    private var pageCount: Int { book?.pageCount ?? 0 }
+    private var page: Int { min(max(0, book?.page ?? 0), max(0, pageCount - 1)) }
+    private var excerpt: String { selected.isEmpty ? passage : selected }
     var body: some View {
         VStack(spacing: 0) {
             if let loadError { ContentUnavailableView("书页未能打开", systemImage: "book.closed", description: Text(loadError)) }
-            else if pages.isEmpty { ProgressView("翻开书页").frame(maxWidth: .infinity, maxHeight: .infinity) }
+            else if loading { ProgressView("翻开书页").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         HStack {
-                            Text("\(page + 1) / \(pages.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            Text("\(page + 1) / \(pageCount)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             Spacer()
                             Button {
                                 library.update(bookID) { book in
@@ -224,7 +265,7 @@ struct BookReaderView: View {
                                 }
                             } label: { Image(systemName: book?.bookmarks.contains(page) == true ? "bookmark.fill" : "bookmark") }.accessibilityLabel("标记这一页")
                         }
-                        SelectablePassage(text: pages[page], fontSize: fontSize, selection: $selected)
+                        SelectablePassage(text: passage, fontSize: fontSize, selection: $selected)
                         Text("长按选中文字，可以只聊选中的那一段。").font(.caption).foregroundStyle(.secondary)
                     }.padding(24)
                 }.id(page)
@@ -234,7 +275,7 @@ struct BookReaderView: View {
                     Button { thought = ""; sharing = true } label: { Label("和他读这段", systemImage: "bubble.left.and.bubble.right") }
                         .accessibilityIdentifier("share-reading")
                     Spacer()
-                    Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 44) }.disabled(page == pages.count - 1).accessibilityLabel("下一页")
+                    Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 44) }.disabled(page == pageCount - 1).accessibilityLabel("下一页")
                 }.font(.subheadline.weight(.medium)).padding(.horizontal, 12).glassSurface(in: RoundedRectangle(cornerRadius: 24)).padding(16)
             }
         }.background(Color(uiColor: .systemGroupedBackground)).navigationTitle(book?.title ?? "书页").navigationBarTitleDisplayMode(.inline)
@@ -247,16 +288,24 @@ struct BookReaderView: View {
                     } label: { Image(systemName: "textformat.size") }.accessibilityLabel("阅读设置")
                 }
             }
-            .task(id: bookID) {
-                do { pages = try await Task.detached(priority: .userInitiated) { try ReadingDisk.loadPages(bookID) }.value }
-                catch { loadError = error.localizedDescription }
+            .task(id: page) {
+                loading = true; loadError = nil
+                let requested = page, id = bookID
+                do {
+                    let text = try await Task.detached(priority: .userInitiated) { try ReadingDisk.loadPage(id, page: requested) }.value
+                    guard !Task.isCancelled else { return }
+                    passage = text; loading = false
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    loadError = error.localizedDescription; loading = false
+                }
             }
             .sheet(isPresented: $sharing) { shareSheet }
             .sheet(isPresented: $notesVisible) { notesSheet }
     }
     private func move(_ delta: Int) {
         selected = ""
-        library.update(bookID) { book in book.page = min(max(0, book.page + delta), pages.count - 1); book.lastRead = .now }
+        library.update(bookID) { book in book.page = min(max(0, book.page + delta), max(0, pageCount - 1)); book.lastRead = .now }
     }
     private var shareSheet: some View {
         NavigationStack {
