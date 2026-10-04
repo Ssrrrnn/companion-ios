@@ -14,9 +14,11 @@ final class CompanionUITests: XCTestCase {
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap(); search.typeText("zzzz")
-        XCTAssertFalse(app.staticTexts["今天有点累，想赖在你这里。"].exists)
+        let result = app.buttons["chat-search-result-preview:2"]
+        let disappears = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: result)
+        XCTAssertEqual(XCTWaiter.wait(for: [disappears], timeout: 5), .completed)
         search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
-        XCTAssertTrue(app.staticTexts["今天有点累，想赖在你这里。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
     }
     func testQuoteReplyAndCancel() {
         let app = launch()

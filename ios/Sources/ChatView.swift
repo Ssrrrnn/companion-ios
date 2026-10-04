@@ -292,7 +292,7 @@ struct ChatView: View {
                                 Text(message.role == "user" ? "我" : name).font(.caption.weight(.semibold)).foregroundStyle(palette.color)
                                 Text(QuotedText(message.text).body).font(.body).foregroundStyle(.primary).lineLimit(4)
                             }.padding(.vertical, 6)
-                        }
+                        }.accessibilityIdentifier("chat-search-result-\(message.id)")
                     }
                 } footer: { Text("搜索最近同步到小家的聊天。") }
             }.searchable(text: $query, prompt: "找一句话")
