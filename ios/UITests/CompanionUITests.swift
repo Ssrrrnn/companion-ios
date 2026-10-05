@@ -35,9 +35,9 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["翻到一页喜欢的话"].exists)
         app.buttons["关闭"].tap()
         add.tap()
-        let field = app.textFields["只记录，也可以不用说出来"]
-        let input = field.exists ? field : app.textViews.firstMatch
-        XCTAssertTrue(input.waitForExistence(timeout: 5)); input.tap()
+        // SwiftUI's vertical TextField is exposed as either TextField or TextView across iOS versions.
+        let input = app.descendants(matching: .any).matching(identifier: "mood-note").firstMatch
+        XCTAssertTrue(input.waitForExistence(timeout: 10)); input.tap()
         if let value = input.value as? String, !value.isEmpty { input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count)) }
         input.typeText("My calendar record")
         app.swipeUp()

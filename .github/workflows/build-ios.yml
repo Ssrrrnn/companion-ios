@@ -41,7 +41,15 @@ jobs:
         if: always()
         with:
           name: Companion-UI-previews
-          path: ios/build/previews/
+          path: |
+            ios/build/previews/*-light.png
+            ios/build/previews/tests.log
+          retention-days: 7
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: Companion-UI-dark-previews
+          path: ios/build/previews/*-dark.png
           retention-days: 7
   publish:
     needs: [build, preview]

@@ -325,6 +325,7 @@ struct SharedCalendarView: View {
                         }
                     }
                     TextField("只记录，也可以不用说出来", text: $note, axis: .vertical).lineLimit(3...6)
+                        .accessibilityIdentifier("mood-note")
                         .padding(16).glassSurface(in: RoundedRectangle(cornerRadius: 18))
                     Button {
                         let existing = records.last { $0.actor == "user" && $0.kind == "mood" }
