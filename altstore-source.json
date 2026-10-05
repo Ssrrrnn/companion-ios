@@ -1,20 +1,29 @@
 {
-  "name": "小家 · 更新源",
-  "subtitle": "我们的小家，持续更新",
+  "name": "Morrow · 更新源",
+  "subtitle": "A little world, with you",
   "website": "https://github.com/Ssrrrnn/companion-ios",
   "iconURL": "https://raw.githubusercontent.com/Ssrrrnn/companion-ios/main/ios/Sources/Assets.xcassets/AppIcon.appiconset/Icon.png",
   "tintColor": "#6E3B4D",
   "apps": [
     {
-      "name": "小家",
+      "name": "Morrow",
       "bundleIdentifier": "com.ssrrrnn.companion",
       "developerName": "Ssrrrnn",
-      "subtitle": "把日常，留在我们的小家。",
+      "subtitle": "把日常，留在彼此身边。",
       "localizedDescription": "个人 AI 伴侣客户端，支持聊天、语音播放、日记与收藏。需在设置中连接自己的伴侣服务。",
       "iconURL": "https://raw.githubusercontent.com/Ssrrrnn/companion-ios/main/ios/Sources/Assets.xcassets/AppIcon.appiconset/Icon.png",
       "tintColor": "#6E3B4D",
       "category": "lifestyle",
       "versions": [
+        {
+          "version": "0.7.0",
+          "buildVersion": "24.1",
+          "minOSVersion": "18.0",
+          "size": 4117244,
+          "localizedDescription": "0.7.0 · Morrow / 留下印记\n\n小家更名为 Morrow，保留原来的连接、聊天、书籍与个人设置。新图标为奶油纸上的手写 m 与心形收笔。\n「印记」改为年份、月份、时间节点与头像卡片组成的日常时间线，保留真实状态、每日计划、心情、日期查询与自主活动开关。\n心情页改为双人表情月历：圆形代表我、方形代表他，点日期查看当天记录；八种心情选择、底部记录面板及按记录天数统计。保留日程和小记，未记录的日期留空。\n主页加入花体英文标题与奶油纸主题，聊天保留一句一句气泡、双方头像、回车发送及自定义壁纸。\n性能优化：移除每条气泡和每张卡片的实时背景模糊及大阴影，避免无变化的同步反复刷新界面；连接密钥不再在循环内反复读取；长聊天按段展开，搜索仍可定位完整记录。\n模拟器验证不代表所有真机帧率，旧设备可继续调整壁纸模糊程度。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.7.0-build24.1/Companion.ipa",
+          "date": "2026-10-05T11:19:43Z"
+        },
         {
           "version": "0.6.0",
           "buildVersion": "20.1",
