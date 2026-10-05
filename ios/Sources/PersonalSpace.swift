@@ -137,7 +137,10 @@ struct CompanionAvatar: View {
                     Text(String(displayName.prefix(1))).font(.system(size: size * 0.43, weight: .medium, design: .serif)).foregroundStyle(Color.primary)
                 }
             }
-        }.frame(width: size, height: size).clipShape(Circle()).accessibilityLabel(user ? "我的头像" : "\(name)的头像")
+        }.frame(width: size, height: size).clipShape(Circle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(user ? "我的头像" : "\(name)的头像")
+            .accessibilityAddTraits(.isImage)
     }
 }
 
