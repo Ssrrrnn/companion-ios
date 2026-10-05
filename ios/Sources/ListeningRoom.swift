@@ -98,7 +98,10 @@ final class ListeningSpace: ObservableObject {
         guard !queue.contains(where: { $0.url == url }) else { error = "这条已经在歌单里"; return false }
         queue.append(ListeningTrack(title: String(title.prefix(200)), url: url, kind: kind)); persist(); error = nil; return true
     }
-    func add(_ track: ListeningTrack) { _ = add(title: track.title, url: track.url, kind: track.kind) }
+    func add(_ track: ListeningTrack) {
+        guard ListeningTrack.validURL(track.url) != nil, !queue.contains(where: { $0.url == track.url }), queue.count < 300 else { return }
+        queue.append(track); persist(); error = nil
+    }
     func remove(_ track: ListeningTrack) {
         if current?.id == track.id { pause(); player.replaceCurrentItem(with: nil); current = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
         queue.removeAll { $0.id == track.id }; persist()
@@ -147,7 +150,7 @@ final class ListeningSpace: ObservableObject {
             guard payload != lastPayload else { return }
             let _: PhoneOK = try await api.request("v1/context/listening", body: data)
             lastPayload = payload
-        } catch { error = "播放信息暂未同步给他" }
+        } catch { self.error = "播放信息暂未同步给他" }
     }
     func episodes(feed: String) async throws -> [ListeningTrack] {
         guard let url = ListeningTrack.validURL(feed) else { throw ConnectionError.server("填写 HTTPS 播客 RSS 地址") }
@@ -180,8 +183,12 @@ struct ListeningHomeCard: View {
 }
 struct ListeningRoomView: View {
     @EnvironmentObject private var listening: ListeningSpace
-    @State private var title = "", url = "", feed = "", kind = "music"
-    @State private var adding = false, importing = false
+    @State private var title = ""
+    @State private var url = ""
+    @State private var feed = ""
+    @State private var kind = "music"
+    @State private var adding = false
+    @State private var importing = false
     @State private var episodes: [ListeningTrack] = []
     var body: some View {
         ScrollView {
@@ -213,6 +220,9 @@ struct ListeningRoomView: View {
                     Link(destination: URL(string: "https://music.163.com/")!) { Label("网易云音乐", systemImage: "music.note.list").frame(maxWidth: .infinity).padding(14).glassSurface(in: RoundedRectangle(cornerRadius: 18)) }
                     Link(destination: URL(string: "https://y.qq.com/")!) { Label("QQ 音乐", systemImage: "music.note").frame(maxWidth: .infinity).padding(14).glassSurface(in: RoundedRectangle(cornerRadius: 18)) }
                 }.font(.caption)
+                NavigationLink(value: CompanionRoute.podcasts) {
+                    HStack { Label("发现播客", systemImage: "mic"); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline).padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 20))
+                }.buttonStyle(.plain)
                 HStack { Text("我们的播放单").font(.headline); Spacer(); Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("添加音乐或播客") }
                 if listening.queue.isEmpty { Text("添加音频直链、播客 RSS，或收藏 QQ／网易云的歌曲链接。平台歌曲在对应 App 播放。").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
                 ForEach(listening.queue) { track in

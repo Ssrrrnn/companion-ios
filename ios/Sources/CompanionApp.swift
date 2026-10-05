@@ -140,6 +140,7 @@ struct CompanionTabs: View {
                 case .permissions: EverydayPermissionsView()
                 case .listening: ListeningRoomView()
                 case .browsing: BrowsingLogView()
+                case .podcasts: PodcastDiscoveryView()
                 }
             }
         }
@@ -198,7 +199,7 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing }
+enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing, podcasts }
 
 struct HomeView: View {
     @EnvironmentObject private var activity: ActivitySpace
