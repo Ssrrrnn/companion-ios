@@ -243,4 +243,35 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["music-share-play"].exists)
         XCTAssertTrue(app.buttons["拿这首和他聊聊"].exists)
     }
+
+    func testQueueSupportsDirectSelectionAndBulkDeletion() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--listening", "--queue-preview", "--reset-draft"]
+        app.launch()
+        let first = app.buttons["queue-track-preview-queue-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        first.tap()
+        XCTAssertTrue(app.staticTexts["预览歌曲不会请求音乐服务"].exists)
+        app.buttons["queue-edit"].tap()
+        app.buttons["select-queue-preview-queue-1"].tap()
+        app.buttons["select-queue-preview-queue-2"].tap()
+        app.buttons["queue-remove-selected"].tap()
+        XCTAssertFalse(app.buttons["queue-track-preview-queue-1"].exists)
+        XCTAssertFalse(app.buttons["queue-track-preview-queue-2"].exists)
+        XCTAssertTrue(app.buttons["queue-track-preview-queue-3"].exists)
+    }
+
+    func testMusicSearchIsVisibleFromPlayerAndCanAcceptQuery() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--listening", "--reset-draft"]
+        app.launch()
+        let search = app.buttons["open-music-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        let input = app.textFields["music-search-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 3))
+        input.tap(); input.typeText("Song")
+        XCTAssertTrue(app.buttons["music-search-submit"].isEnabled)
+        XCTAssertTrue(app.staticTexts["可以先搜索歌曲，播放 QQ 音乐时需要连接你的账号。"].exists)
+    }
 }

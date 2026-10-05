@@ -23,9 +23,10 @@ struct QQSongPage {
     let total: Int
     let nextOffset: Int
     var upstreamHasMore: Bool? = nil
-    var hasMore: Bool { !songs.isEmpty && (upstreamHasMore ?? (nextOffset < total)) }
+    var rawSpan: Int = 0
+    var hasMore: Bool { (!songs.isEmpty || rawSpan > 0) && (upstreamHasMore == true || nextOffset < total) }
     func canContinue(after existingIDs: Set<String>, offset: Int) -> Bool {
-        hasMore && nextOffset > offset && songs.contains { !existingIDs.contains($0.id) }
+        hasMore && nextOffset > offset && ((songs.isEmpty && rawSpan > 0) || songs.contains { !existingIDs.contains($0.id) })
     }
 }
 struct TimedLyric: Identifiable, Equatable {
@@ -53,6 +54,20 @@ struct TimedLyric: Identifiable, Equatable {
 }
 // Protocol adapters are written for Morrow. No third-party player code is bundled.
 enum QQWire {
+    static func songPage(_ detail: [String: Any], offset: Int, fallbackTotal: Int) throws -> QQSongPage {
+        guard let rows = (detail["songlist"] ?? detail["songList"]) as? [[String: Any]] else { throw ConnectionError.server("这个歌单暂时无法读取，请在 QQ 音乐检查是否可见") }
+        let fullList = rows.count > 100
+        let slice = fullList ? Array(rows.dropFirst(offset).prefix(100)) : rows
+        let span = fullList ? slice.count : min(100, max(slice.count, integer(detail["songlist_size"])))
+        let total = max(fullList ? rows.count : offset + span, max(fallbackTotal, integer(detail["total_song_num"] ?? detail["totalSongNum"] ?? detail["songnum"])))
+        return QQSongPage(songs: slice.compactMap(song), total: total, nextOffset: offset + span,
+                         upstreamHasMore: detail["hasmore"] == nil ? nil : integer(detail["hasmore"]) != 0, rawSpan: span)
+    }
+    static func searchPage(_ data: [String: Any], page: Int) throws -> QQSongPage {
+        guard let section = data["song"] as? [String: Any], let rows = section["list"] as? [[String: Any]] else { throw ConnectionError.server("音乐搜索暂未返回结果") }
+        let offset = (page - 1) * 30 + rows.count
+        return QQSongPage(songs: rows.compactMap(song), total: max(offset, integer(section["totalnum"])), nextOffset: offset, rawSpan: rows.count)
+    }
     enum LoginNavigation: Equatable { case webpage, app, blocked }
     static func loginHost(_ host: String) -> Bool {
         let host = host.lowercased()

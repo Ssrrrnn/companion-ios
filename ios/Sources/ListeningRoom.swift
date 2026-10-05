@@ -57,16 +57,23 @@ final class ListeningSpace: ObservableObject {
     let qq = QQMusicSpace()
     @Published private(set) var queue: [ListeningTrack] = []
     @Published private(set) var current: ListeningTrack?
+    @Published private(set) var selectedTrackID: String?
+    @Published private(set) var loadingPlaylist: String?
     @Published private(set) var playing = false
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
     @Published private(set) var resolving = false
     @Published private(set) var lyrics: [TimedLyric] = []
     @Published private(set) var sharedAt: Date?
-    @Published private(set) var listenedSeconds: Double = UserDefaults.standard.double(forKey: "listening_seconds")
+    @Published private(set) var listenedSeconds: Double = 0
     @Published var mode = 0
     @Published var error: String?
-    @Published var sharing = UserDefaults.standard.bool(forKey: "listening_share") { didSet { UserDefaults.standard.set(sharing, forKey: "listening_share"); lastSync = .distantPast } }
+    @Published var sharing = false { didSet { defaults.set(sharing, forKey: "listening_share"); lastSync = .distantPast } }
+    private let defaults: UserDefaults
+    private let playbackResolver: ((ListeningTrack) async throws -> URL)?
+    private(set) var queueGeneration = UUID()
+    private var playlistTask: Task<Void, Never>?
+    private var activePlaylistID: String?
     private let player = AVPlayer()
     private var observer: Any?
     private var statusObserver: NSKeyValueObservation?
@@ -80,8 +87,11 @@ final class ListeningSpace: ObservableObject {
     private var itemRequest = UUID()
     private var artworkImage: UIImage?
     private var lastTick = Date.now
-    init() {
-        if let data = UserDefaults.standard.data(forKey: "listening_queue"), let items = try? JSONDecoder().decode([ListeningTrack].self, from: data) { queue = items }
+    init(defaults: UserDefaults = .standard, playbackResolver: ((ListeningTrack) async throws -> URL)? = nil, systemControls: Bool = true) {
+        self.defaults = defaults; self.playbackResolver = playbackResolver
+        listenedSeconds = defaults.double(forKey: "listening_seconds"); sharing = defaults.bool(forKey: "listening_share")
+        if let data = defaults.data(forKey: "listening_queue"), let items = try? JSONDecoder().decode([ListeningTrack].self, from: data) { queue = ListeningQueue.merged([], items) }
+        guard systemControls else { return }
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
@@ -91,7 +101,7 @@ final class ListeningSpace: ObservableObject {
                 let elapsed = Date.now.timeIntervalSince(self.lastTick); self.lastTick = .now
                 if self.playing && elapsed > 0 && elapsed < 3 {
                     self.listenedSeconds += elapsed
-                    UserDefaults.standard.set(self.listenedSeconds, forKey: "listening_seconds")
+                    self.defaults.set(self.listenedSeconds, forKey: "listening_seconds")
                 }
                 self.nowPlaying()
             }
@@ -121,34 +131,92 @@ final class ListeningSpace: ObservableObject {
     }
     func add(title: String, url: String, kind: String) -> Bool {
         let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ListeningTrack.validURL(url) != nil, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, queue.count < 300 else { error = "填写名称和 HTTPS 链接，最多保存 300 条"; return false }
+        guard ListeningTrack.validURL(url) != nil, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "填写名称和 HTTPS 链接"; return false }
         guard !queue.contains(where: { $0.url == url }) else { error = "这条已经在歌单里"; return false }
-        queue.append(ListeningTrack(title: String(title.prefix(200)), url: url, kind: kind)); persist(); error = nil; return true
+        return add(ListeningTrack(title: String(title.prefix(200)), url: url, kind: kind))
     }
-    func add(_ track: ListeningTrack) {
-        guard ListeningTrack.validURL(track.url) != nil, !queue.contains(where: { $0.url == track.url }), queue.count < 300 else { return }
-        queue.append(track); persist(); error = nil
+    @discardableResult func add(_ track: ListeningTrack) -> Bool {
+        let track = ListeningQueue.normalized(track)
+        guard ListeningTrack.validURL(track.url) != nil else { error = "歌曲链接不支持"; return false }
+        if queue.contains(where: { ListeningQueue.key($0) == ListeningQueue.key(track) }) { return true }
+        guard queue.count < ListeningQueue.limit else { error = "播放单已达到 5000 首，请先移除一些歌曲"; return false }
+        queueChanged(); queue = ListeningQueue.merged(queue, [track]); persist(); error = nil; return true
     }
     func remove(_ track: ListeningTrack) {
-        if resolvingTrackID == track.id { playRequest = UUID(); resolving = false; resolvingTrackID = nil }
-        if current?.id == track.id { pause(); itemRequest = UUID(); statusObserver = nil; player.replaceCurrentItem(with: nil); current = nil; lyrics = []; sharedAt = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
-        queue.removeAll { $0.id == track.id }; persist()
+        remove(ids: [track.id])
     }
-    private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: "listening_queue") } }
+    func remove(ids: Set<String>) {
+        if let id = resolvingTrackID, ids.contains(id) { playRequest = UUID(); resolving = false; resolvingTrackID = nil }
+        if let id = current?.id, ids.contains(id) { pause(); itemRequest = UUID(); statusObserver = nil; player.replaceCurrentItem(with: nil); current = nil; lyrics = []; sharedAt = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
+        if let id = selectedTrackID, ids.contains(id) { selectedTrackID = nil; error = nil }
+        queueChanged(); queue.removeAll { ids.contains($0.id) }; persist()
+    }
+    func clearQueue() {
+        var ids = Set(queue.map(\.id))
+        if let id = current?.id { ids.insert(id) }
+        if let id = selectedTrackID { ids.insert(id) }
+        remove(ids: ids); error = nil
+    }
+    @discardableResult func replaceQueue(_ tracks: [ListeningTrack], startingAt selected: ListeningTrack) -> UUID? {
+        let items = ListeningQueue.merged([], tracks)
+        guard let track = items.first(where: { ListeningQueue.key($0) == ListeningQueue.key(ListeningQueue.normalized(selected)) }) else { error = "这首歌尚未加载到播放单"; return nil }
+        queueChanged(); queue = items; persist(); play(track); return queueGeneration
+    }
+    @discardableResult func appendPlaylistTracks(_ tracks: [ListeningTrack], generation: UUID) -> Bool {
+        guard generation == queueGeneration else { return false }
+        queue = ListeningQueue.merged(queue, tracks); persist()
+        if queue.count >= ListeningQueue.limit { error = "已加入前 5000 首歌曲"; return false }
+        return true
+    }
+    private func queueChanged() { queueGeneration = UUID(); playlistTask?.cancel(); playlistTask = nil; loadingPlaylist = nil; activePlaylistID = nil }
+    func playPlaylist(_ playlist: QQPlaylist, songs: [ListeningTrack], from selected: ListeningTrack, offset: Int, more: Bool) {
+        if activePlaylistID == playlist.id, queue.contains(where: { ListeningQueue.key($0) == ListeningQueue.key(selected) }) { play(selected); return }
+        guard let stamp = replaceQueue(songs, startingAt: selected) else { return }
+        activePlaylistID = playlist.id
+        guard more else { return }
+        loadingPlaylist = playlist.title
+        playlistTask = Task {
+            var offset = offset, more = more
+            do {
+                for _ in 0..<50 {
+                    guard !Task.isCancelled, stamp == queueGeneration, more else { break }
+                    let page = try await qq.songs(in: playlist, offset: offset)
+                    guard !Task.isCancelled, stamp == queueGeneration else { return }
+                    let canContinue = page.canContinue(after: Set(queue.map(\.id)), offset: offset)
+                    guard appendPlaylistTracks(page.songs, generation: stamp) else { break }
+                    if page.hasMore && !canContinue { throw ConnectionError.server("QQ 音乐未返回后续新歌曲") }
+                    offset = page.nextOffset; more = canContinue
+                }
+            } catch {
+                if !Task.isCancelled, stamp == queueGeneration { self.error = "已载入 \(queue.count) 首，后续歌曲暂未读完：" + error.localizedDescription }
+            }
+            if stamp == queueGeneration { loadingPlaylist = nil; playlistTask = nil }
+        }
+    }
+    private func persist() { if let data = try? JSONEncoder().encode(queue) { defaults.set(data, forKey: "listening_queue") } }
     func play(_ track: ListeningTrack) {
+        let normalized = ListeningQueue.normalized(track)
+        guard add(normalized), let track = queue.first(where: { ListeningQueue.key($0) == ListeningQueue.key(normalized) }) else { return }
+        selectedTrackID = track.id
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview") { error = "预览歌曲不会请求音乐服务"; return }
+        #endif
         let stamp = UUID(); playRequest = stamp; resolving = false; resolvingTrackID = nil
         if track.qqMID != nil {
+            player.pause()
             resolving = true; resolvingTrackID = track.id; error = nil
             Task {
                 do {
-                    let url = try await qq.playbackURL(track)
+                    let url: URL
+                    if let resolver = self.playbackResolver { url = try await resolver(track) }
+                    else { url = try await qq.playbackURL(track) }
                     guard self.playRequest == stamp else { return }
                     self.resolving = false; self.resolvingTrackID = nil; self.start(track, url: url)
                     let metadataStamp = self.itemRequest
                     let lyrics = await qq.lyrics(track)
                     if self.itemRequest == metadataStamp, self.current?.id == track.id { self.lyrics = lyrics }
                 } catch {
-                    if self.playRequest == stamp { self.resolving = false; self.resolvingTrackID = nil; self.error = error is CancellationError ? nil : error.localizedDescription }
+                    if self.playRequest == stamp { self.resolving = false; self.resolvingTrackID = nil; self.error = error is CancellationError ? nil : "「\(track.title)」：" + error.localizedDescription }
                 }
             }
             return
@@ -182,22 +250,24 @@ final class ListeningSpace: ObservableObject {
     }
     func resume() { guard current != nil, player.currentItem != nil else { return }; try? AVAudioSession.sharedInstance().setActive(true); player.play() }
     func pause() { player.pause(); playRequest = UUID(); resolving = false; resolvingTrackID = nil; nowPlaying(); lastSync = .distantPast }
-    func toggle() { playing ? pause() : resume() }
+    func toggle() {
+        if let selected = queue.first(where: { $0.id == selectedTrackID }), selected.id != current?.id { play(selected) }
+        else if current == nil, let first = ListeningQueue.candidate(in: queue, selectedID: nil, forward: true) { play(first) }
+        else { playing ? pause() : resume() }
+    }
     func seek(_ value: Double) { guard value.isFinite else { return }; let target = max(0, min(duration > 0 ? duration : value, value)); player.seek(to: CMTime(seconds: target, preferredTimescale: 600)); position = target; nowPlaying(); lastSync = .distantPast }
     func next() {
-        if mode == 2, let track = queue.filter({ (!$0.external || $0.qqMID != nil) && $0.id != current?.id }).randomElement() { play(track); return }
-        guard let current, let index = queue.firstIndex(where: { $0.id == current.id }), index + 1 < queue.count else { pause(); return }
-        for track in queue[(index + 1)...] where !track.external || track.qqMID != nil { play(track); return }; pause()
+        if mode == 2, let track = queue.filter({ (!$0.external || $0.qqMID != nil) && $0.id != selectedTrackID }).randomElement() { play(track); return }
+        if let track = ListeningQueue.candidate(in: queue, selectedID: selectedTrackID ?? current?.id, forward: true) { play(track) } else { pause() }
     }
     func previous() {
-        if position > 3 { seek(0); return }
-        guard let current, let index = queue.firstIndex(where: { $0.id == current.id }), index > 0 else { seek(0); return }
-        for track in queue[..<index].reversed() where !track.external || track.qqMID != nil { play(track); return }
+        if selectedTrackID == current?.id, position > 3 { seek(0); return }
+        if let track = ListeningQueue.candidate(in: queue, selectedID: selectedTrackID ?? current?.id, forward: false) { play(track) } else { seek(0) }
     }
     func disconnectQQ() async {
         if current?.qqMID != nil, let current { remove(current) }
         playRequest = UUID(); resolving = false; resolvingTrackID = nil
-        queue.removeAll { $0.qqMID != nil }; persist(); await qq.disconnect()
+        remove(ids: Set(queue.filter { $0.qqMID != nil }.map(\.id))); await qq.disconnect()
     }
     private func nowPlaying() {
         guard let current else { return }

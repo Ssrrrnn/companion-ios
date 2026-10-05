@@ -2,7 +2,11 @@
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
-## Current release: 0.9.0
+## Current release: 0.9.1
+
+The player now has visible song-search and queue-management buttons. Search reads public QQ catalog results, supports paging where the full search endpoint is available, and falls back to genuine quick-search results if needed. A QQ account is still required for QQ playback. Tap a song row to play; the queue supports swipe removal, selection, select-all, batch removal and confirmed clearing. These operations affect only Morrow's local playback queue.
+
+Playlist playback replaces the current queue with the selected playlist and continues loading subsequent pages in the background, bounded at 5000 unique entries. It uses the raw page span and known total instead of stopping on an inconsistent upstream continuation flag. Duplicate or stalled pages stop with an explanation. Manual queue edits cancel background appending so removed entries cannot reappear. Next/previous follow the selected song even when that song fails rights resolution, and playback failures are visible near the player controls. Official account rights and network availability still determine whether an individual song plays.
 
 Music shared in chat appears as a tappable card with song title, artist, provider, favorite and playback actions. The companion can search actual public QQ Music catalog results and prepare a share in the same reply; no account cookies leave the phone. QQ cards use the existing account connection and rights check for playback, while NetEase cards open externally. Voice reads the song label rather than its URL.
 

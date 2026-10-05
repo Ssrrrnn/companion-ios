@@ -107,8 +107,9 @@ final class QQMusicSpace: ObservableObject {
             webStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { continuation.resume() }
         }
     }
-    private func request(_ endpoint: String, params: [String: String] = [:], body: [String: Any]? = nil) async throws -> [String: Any] {
-        guard connected else { throw ConnectionError.server("先连接 QQ 音乐账号") }
+    private func request(_ endpoint: String, params: [String: String] = [:], body: [String: Any]? = nil, publicCatalog: Bool = false) async throws -> [String: Any] {
+        let catalogEndpoints = ["https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg", "https://c.y.qq.com/soso/fcgi-bin/client_search_cp"]
+        guard connected || (publicCatalog && body == nil && catalogEndpoints.contains(endpoint)) else { throw ConnectionError.server("先连接 QQ 音乐账号") }
         guard var parts = URLComponents(string: endpoint), parts.scheme == "https",
               ["c.y.qq.com", "u.y.qq.com"].contains(parts.host ?? "") else { throw ConnectionError.server("音乐接口地址不支持") }
         if !params.isEmpty { parts.queryItems = params.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) } }
@@ -228,24 +229,31 @@ final class QQMusicSpace: ObservableObject {
             try checked(object)
             detail = (object["cdlist"] as? [[String: Any]])?.first ?? [:]
         }
-        guard let rows = (detail["songlist"] ?? detail["songList"]) as? [[String: Any]] else { throw ConnectionError.server("这个歌单暂时无法读取，请在 QQ 音乐检查是否可见") }
-        let total = max(rows.count > 100 ? rows.count : offset + rows.count, QQWire.integer(detail["total_song_num"] ?? detail["totalSongNum"] ?? detail["songnum"] ?? playlist.count))
-        let slice = rows.count > 100 ? Array(rows.dropFirst(offset).prefix(100)) : rows
-        return QQSongPage(songs: slice.compactMap(QQWire.song), total: total, nextOffset: offset + slice.count,
-                         upstreamHasMore: detail["hasmore"] == nil ? nil : QQWire.integer(detail["hasmore"]) != 0)
+        return try QQWire.songPage(detail, offset: offset, fallbackTotal: playlist.count)
     }
     func search(_ text: String) async throws -> [ListeningTrack] {
+        try await searchPage(text).songs
+    }
+    func searchPage(_ text: String, page: Int = 1) async throws -> QQSongPage {
         let query = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
-        guard !query.isEmpty else { return [] }
-        let object = try await request("https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg", params: common.merging(["key": query]) { _, new in new }); try checked(object)
+        guard !query.isEmpty, (1...50).contains(page) else { return QQSongPage(songs: [], total: 0, nextOffset: 0) }
+        do {
+            let object = try await request("https://c.y.qq.com/soso/fcgi-bin/client_search_cp", params: common.merging(["w": query, "n": "30", "p": String(page), "t": "0", "cr": "1", "loginUin": connected ? accountID : "0"]) { _, new in new }, publicCatalog: true)
+            try checked(object)
+            return try QQWire.searchPage(object["data"] as? [String: Any] ?? [:], page: page)
+        } catch {
+            guard page == 1, !(error is CancellationError) else { throw error }
+        }
+        let object = try await request("https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg", params: common.merging(["key": query, "loginUin": connected ? accountID : "0"]) { _, new in new }, publicCatalog: true); try checked(object)
         let data = object["data"] as? [String: Any] ?? [:]
         let section = data["song"] as? [String: Any] ?? [:]
-        return (section["itemlist"] as? [[String: Any]] ?? []).compactMap { row in
+        let songs: [ListeningTrack] = (section["itemlist"] as? [[String: Any]] ?? []).compactMap { row in
             var row = row
             row["songmid"] = row["mid"]; row["songname"] = row["name"]
             row["singer"] = [["name": QQWire.string(row["singer"])]]
             return QQWire.song(row)
         }
+        return QQSongPage(songs: songs, total: songs.count, nextOffset: songs.count)
     }
     func playbackURL(_ track: ListeningTrack) async throws -> URL {
         guard let mid = track.qqMID, QQWire.identifier(mid) else { throw ConnectionError.server("歌曲标识不支持") }

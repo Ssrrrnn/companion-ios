@@ -12,6 +12,8 @@ struct ListeningRoomView: View {
     @State private var adding = false
     @State private var showLyrics = false
     @State private var disconnect = false
+    @State private var managing = false
+    @State private var searchingMusic = false
     private let accent = Color(red: 0.73, green: 0.25, blue: 0.34)
     var body: some View {
         ScrollView {
@@ -42,17 +44,19 @@ struct ListeningRoomView: View {
                     HStack(spacing: 26) {
                         Button { listening.mode = (listening.mode + 1) % 3 } label: { Image(systemName: ["repeat", "repeat.1", "shuffle"][listening.mode]) }
                             .accessibilityLabel(["顺序播放", "单曲循环", "随机播放"][listening.mode])
-                        Button { listening.previous() } label: { Image(systemName: "backward.end.fill").font(.title2) }.disabled(listening.current == nil).accessibilityLabel("上一首")
+                        Button { listening.previous() } label: { Image(systemName: "backward.end.fill").font(.title2) }.disabled(listening.queue.isEmpty).accessibilityLabel("上一首")
                         Button { listening.toggle() } label: {
                             Group {
                                 if listening.resolving { ProgressView().tint(accent) }
                                 else { Image(systemName: listening.playing ? "pause.fill" : "play.fill").font(.title) }
                             }.frame(width: 66, height: 66).background(accent.opacity(0.12), in: Circle()).overlay(Circle().stroke(accent.opacity(0.2)))
-                        }.disabled(listening.current == nil || listening.resolving).accessibilityLabel(listening.playing ? "暂停" : "播放")
-                        Button { listening.next() } label: { Image(systemName: "forward.end.fill").font(.title2) }.disabled(listening.current == nil).accessibilityLabel("下一首")
+                        }.disabled(listening.queue.isEmpty || listening.resolving).accessibilityLabel(listening.playing ? "暂停" : "播放")
+                        Button { listening.next() } label: { Image(systemName: "forward.end.fill").font(.title2) }.disabled(listening.queue.isEmpty).accessibilityLabel("下一首")
                         Button { library = true } label: { Image(systemName: "music.note.list") }.accessibilityLabel("我的 QQ 音乐歌单")
                     }.foregroundStyle(accent).padding(.top, 10)
                 }.padding(.horizontal, 12)
+                if let error = listening.error { Text(error).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
+                if let playlist = listening.loadingPlaylist { HStack { ProgressView().controlSize(.small); Text("正在载入「\(playlist)」 · 已加入 \(listening.queue.count) 首").font(.caption).foregroundStyle(.secondary) } }
                 HStack {
                     Label("在小家听了 \(Int(listening.listenedSeconds / 60)) 分钟", systemImage: "headphones").font(.caption)
                     Spacer()
@@ -74,6 +78,7 @@ struct ListeningRoomView: View {
                 HStack {
                     Text("我们的播放单").font(.headline)
                     Spacer()
+                    Button("管理") { managing = true }.font(.subheadline).accessibilityIdentifier("manage-listening-queue")
                     Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("添加音乐或播客")
                 }
                 if listening.queue.isEmpty {
@@ -81,15 +86,20 @@ struct ListeningRoomView: View {
                         .font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 LazyVStack(spacing: 10) {
-                    ForEach(listening.queue) { track in
+                    ForEach(listening.queue.prefix(8)) { track in
                         HStack(spacing: 12) {
+                            Button { listening.play(track) } label: {
+                            HStack(spacing: 12) {
                             MusicCover(url: track.artwork, size: 44, icon: track.kind == "podcast" ? "mic.fill" : "music.note")
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(track.title).font(.subheadline).lineLimit(1)
                                 Text(track.artist.isEmpty ? (track.qqMID != nil ? "QQ 音乐" : track.kind == "podcast" ? "播客" : "音频") : track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer()
-                            Button { listening.play(track) } label: { Image(systemName: listening.current?.id == track.id && listening.playing ? "waveform" : "play.circle") }.accessibilityLabel("播放 " + track.title)
+                            Image(systemName: listening.current?.id == track.id && listening.playing ? "waveform" : "play.circle")
+                            }.foregroundStyle(.primary).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityLabel("播放 " + track.title)
+                            Menu { Button("移除这首", role: .destructive) { listening.remove(track) } } label: { Image(systemName: "ellipsis").frame(width: 30, height: 35) }.accessibilityLabel("管理 " + track.title)
                         }.padding(14).glassSurface(in: RoundedRectangle(cornerRadius: 20))
                             .contextMenu {
                                 Button("移除", role: .destructive) { listening.remove(track) }
@@ -97,7 +107,7 @@ struct ListeningRoomView: View {
                             }
                     }
                 }
-                if let error = listening.error { Text(error).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
+                if listening.queue.count > 8 { Button("查看全部 \(listening.queue.count) 首歌曲") { managing = true }.buttonStyle(.bordered) }
                 NavigationLink(value: CompanionRoute.podcasts) {
                     HStack { Label("发现播客", systemImage: "mic"); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline).padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 20))
                 }.buttonStyle(.plain)
@@ -108,13 +118,26 @@ struct ListeningRoomView: View {
                 LinearGradient(colors: [accent.opacity(scheme == .dark ? 0.18 : 0.09), .clear], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
             }
         }.navigationTitle("一起听").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) { HStack(spacing: 18) {
+                    Button { searchingMusic = true } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("搜索歌曲").accessibilityIdentifier("open-music-search")
+                    Button { managing = true } label: { Image(systemName: "list.bullet") }.accessibilityLabel("管理播放单").accessibilityIdentifier("open-listening-queue")
+                } }
+            }
             .sheet(isPresented: $login) { QQMusicLoginView(account: listening.qq) }
             .sheet(isPresented: $library) { QQMusicLibraryView(account: listening.qq, onConnect: { library = false; login = true }) }
             .sheet(isPresented: $adding) { AddListeningView() }
+            .sheet(isPresented: $managing) { ListeningQueueView() }
+            .sheet(isPresented: $searchingMusic) { MusicSearchView(account: listening.qq) }
             .confirmationDialog("断开 QQ 音乐？本机登录信息和 QQ 播放单会被清除。", isPresented: $disconnect, titleVisibility: .visible) {
                 Button("断开连接", role: .destructive) { Task { await listening.disconnectQQ() } }
             }
-            .task { if !ProcessInfo.processInfo.arguments.contains("--ui-preview"), listening.qq.connected, listening.qq.refreshedAt == nil { await listening.qq.refresh() } }
+            .task {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--ui-preview"), ProcessInfo.processInfo.arguments.contains("--queue-preview") { managing = true }
+                #endif
+                if !ProcessInfo.processInfo.arguments.contains("--ui-preview"), listening.qq.connected, listening.qq.refreshedAt == nil { await listening.qq.refresh() }
+            }
     }
     private var record: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !listening.playing || reduceMotion)) { context in
@@ -209,7 +232,7 @@ struct QQMusicLibraryView: View {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     HStack {
                         TextField("搜索 QQ 音乐歌曲", text: $query).submitLabel(.search).onSubmit { search() }
-                        Button { search() } label: { if searching { ProgressView() } else { Image(systemName: "magnifyingglass") } }.disabled(searching || !account.connected).accessibilityLabel("搜索歌曲")
+                        Button { search() } label: { if searching { ProgressView() } else { Image(systemName: "magnifyingglass") } }.disabled(searching).accessibilityLabel("搜索歌曲")
                     }.padding(14).glassSurface(in: RoundedRectangle(cornerRadius: 18))
                     if let searchError { Text(searchError).font(.caption).foregroundStyle(.secondary) }
                     ForEach(results) { track in QQSongRow(track: track) }
@@ -263,14 +286,17 @@ private struct QQPlaylistView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 18) { MusicCover(url: playlist.cover, size: 90); VStack(alignment: .leading, spacing: 8) { Text(playlist.title).font(.headline); Text("\(playlist.count) 首歌曲").font(.caption).foregroundStyle(.secondary) } }
-                Button("将已加载歌曲加入播放单") { for song in songs { listening.add(song) } }.buttonStyle(.bordered).disabled(songs.isEmpty)
-                ForEach(songs) { track in QQSongRow(track: track) }
+                Button("播放这张歌单") { if let first = songs.first { play(first) } }.buttonStyle(.borderedProminent).disabled(songs.isEmpty)
+                Text("点一首从这里开始播放，后续歌曲会继续载入播放单。").font(.caption).foregroundStyle(.secondary)
+                Text("已读取 \(songs.count) 首").font(.caption).foregroundStyle(.secondary)
+                ForEach(songs) { track in QQSongRow(track: track, onPlay: play) }
                 if let error { Text(error).font(.caption).foregroundStyle(.secondary) }
                 if more { Button(busy ? "读取中…" : songs.isEmpty ? "读取歌曲" : "加载更多") { load() }.disabled(busy) }
                 if !more && songs.isEmpty { Text("这个歌单还没有歌曲").foregroundStyle(.secondary) }
             }.padding(20)
         }.background { GlassWallpaper() }.navigationTitle(playlist.title).navigationBarTitleDisplayMode(.inline).task { if songs.isEmpty { load() } }
     }
+    private func play(_ track: ListeningTrack) { listening.playPlaylist(playlist, songs: songs, from: track, offset: offset, more: more) }
     private func load() {
         guard !busy else { return }; busy = true; error = nil
         Task {
@@ -286,26 +312,33 @@ private struct QQPlaylistView: View {
         }
     }
 }
-private struct QQSongRow: View {
+struct QQSongRow: View {
     let track: ListeningTrack
+    var onPlay: ((ListeningTrack) -> Void)? = nil
     @EnvironmentObject private var listening: ListeningSpace
     @EnvironmentObject private var space: PersonalSpace
     @AppStorage("chat_draft_v1") private var draft = ""
     var body: some View {
         HStack(spacing: 12) {
+            Button { if let onPlay { onPlay(track) } else { listening.play(track) } } label: {
+            HStack(spacing: 12) {
             MusicCover(url: track.artwork, size: 44)
             VStack(alignment: .leading, spacing: 4) { Text(track.title).font(.subheadline).lineLimit(1); Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             Spacer()
-            Button { listening.add(track); listening.play(track) } label: { Image(systemName: "play.circle.fill").font(.title2) }.accessibilityLabel("播放 " + track.title)
+            Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(homeAccent)
+            }.foregroundStyle(.primary).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("播放 " + track.title)
+            Menu { actions } label: { Image(systemName: "ellipsis.circle").font(.title3) }.accessibilityLabel("歌曲操作 " + track.title)
         }.padding(12).glassSurface(in: RoundedRectangle(cornerRadius: 18))
-            .contextMenu {
+            .contextMenu { actions }
+    }
+    @ViewBuilder private var actions: some View {
                 Button("加入播放单") { listening.add(track) }
                 if let share = MusicShare.from(track.url, label: track.title + (track.artist.isEmpty ? "" : " · " + track.artist)) {
                     Button(space.isMusicSaved(share.id) ? "取消音乐收藏" : "收藏这首歌") { space.toggleMusic(share) }
                     Button("分享这首给他") { draft = "想把这首歌分享给你。\n" + share.markdown; NotificationCenter.default.post(name: .morrowOpenChat, object: nil) }
                 }
                 Link("在 QQ 音乐打开", destination: URL(string: track.url)!)
-            }
     }
 }
 private struct AddListeningView: View {

@@ -44,6 +44,10 @@ struct CompanionApp: App {
                         if ProcessInfo.processInfo.arguments.contains("--reset-draft") { UserDefaults.standard.removeObject(forKey: "chat_draft_v1") }
                         if ProcessInfo.processInfo.arguments.contains("--books") { library.addPreviewBook() }
                         model.isPreview = true
+                        listening.clearQueue()
+                        if ProcessInfo.processInfo.arguments.contains("--queue-preview") {
+                            for index in 1...12 { listening.add(ListeningTrack(id: "preview-queue-\(index)", title: "第\(index)首预览歌曲", url: "https://y.qq.com/n/ryqq/songDetail/PreviewQueue\(index)", kind: "music", artist: "预览歌手", qqMID: "PreviewQueue\(index)")) }
+                        }
                         shared.preview()
                         reading.preview(library); activity.preview(); weather.preview()
                         model.connected = true
