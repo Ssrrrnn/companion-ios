@@ -146,12 +146,19 @@ enum QQWire {
                 if let number = Double(value), number > 1_000_000_000 {
                     return Date(timeIntervalSince1970: number > 10_000_000_000 ? number / 1000 : number) <= now
                 }
-                if let date = ISO8601DateFormatter().date(from: value) { return date <= now }
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = iso.date(from: value) { return date <= now }
+                iso.formatOptions = [.withInternetDateTime]
+                if let date = iso.date(from: value) { return date <= now }
+                let local = DateFormatter(); local.locale = Locale(identifier: "en_US_POSIX")
+                local.timeZone = TimeZone(identifier: "Asia/Shanghai"); local.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                if let date = local.date(from: value) { return date <= now }
             }
             return false
         }
-        let vip = status(["isvip", "ivipflag", "inewvip", "vipflag", "viptype", "isgreenvip"])
-        let svip = status(["issvip", "isupervip", "inewsupervip", "sviptype", "issupervip"])
+        let vip = status(["isvip", "ivipflag", "inewvip", "vipflag", "isgreenvip"]) ?? status(["viptype"])
+        let svip = status(["issvip", "isupervip", "inewsupervip", "issupervip"]) ?? status(["sviptype"])
         if svip == true && !expired(["superendtime", "svipendtime", "svipexpiretime"]) { return .svip }
         if vip == true && !expired(["vipendtime", "endtime", "vipexpiretime"]) { return .vip }
         return vip == nil ? .unknown : .ordinary

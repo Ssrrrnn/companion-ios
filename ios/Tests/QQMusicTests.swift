@@ -15,6 +15,9 @@ final class QQMusicTests: XCTestCase {
         XCTAssertEqual(QQWire.membership(membership(["is_vip": true, "end_time": 1000000001]), account: "10001"), .ordinary)
         XCTAssertEqual(QQWire.membership(membership(["is_vip": true, "end_time": 2100000000]), account: "10001"), .vip)
         XCTAssertEqual(QQWire.membership(membership(["is_vip": false]), account: "10001"), .ordinary)
+        XCTAssertEqual(QQWire.membership(membership(["is_vip": false, "vip_type": 1]), account: "10001"), .ordinary)
+        XCTAssertEqual(QQWire.membership(membership(["is_vip": true, "end_time": "2001-01-01T00:00:00.000Z"]), account: "10001"), .ordinary)
+        XCTAssertEqual(QQWire.membership(membership(["is_vip": true, "end_time": "2001-01-01 00:00:00"]), account: "10001"), .ordinary)
         XCTAssertEqual(QQWire.membership(membership(["iVipFlag": 1, "iSuperVip": 1, "superEndTime": "2036-01-01T00:00:00Z"]), account: "10001"), .svip)
         XCTAssertEqual(QQWire.membership(membership(["is_vip": true, "vip_end_time": 2100000000, "is_svip": true, "svip_end_time": 1000000001]), account: "10001"), .vip)
     }
