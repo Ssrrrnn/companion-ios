@@ -76,6 +76,8 @@ final class ListeningSpace: ObservableObject {
     private var pauseListener: AnyCancellable?
     private var endListener: AnyCancellable?
     private var playRequest = UUID()
+    private var resolvingTrackID: String?
+    private var itemRequest = UUID()
     private var artworkImage: UIImage?
     private var lastTick = Date.now
     init() {
@@ -128,24 +130,25 @@ final class ListeningSpace: ObservableObject {
         queue.append(track); persist(); error = nil
     }
     func remove(_ track: ListeningTrack) {
-        playRequest = UUID(); resolving = false
-        if current?.id == track.id { pause(); player.replaceCurrentItem(with: nil); current = nil; lyrics = []; sharedAt = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
+        if resolvingTrackID == track.id { playRequest = UUID(); resolving = false; resolvingTrackID = nil }
+        if current?.id == track.id { pause(); itemRequest = UUID(); statusObserver = nil; player.replaceCurrentItem(with: nil); current = nil; lyrics = []; sharedAt = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
         queue.removeAll { $0.id == track.id }; persist()
     }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: "listening_queue") } }
     func play(_ track: ListeningTrack) {
-        let stamp = UUID(); playRequest = stamp; resolving = false
+        let stamp = UUID(); playRequest = stamp; resolving = false; resolvingTrackID = nil
         if track.qqMID != nil {
-            resolving = true; error = nil
+            resolving = true; resolvingTrackID = track.id; error = nil
             Task {
                 do {
                     let url = try await qq.playbackURL(track)
                     guard self.playRequest == stamp else { return }
-                    self.resolving = false; self.start(track, url: url)
+                    self.resolving = false; self.resolvingTrackID = nil; self.start(track, url: url)
+                    let metadataStamp = self.itemRequest
                     let lyrics = await qq.lyrics(track)
-                    if self.playRequest == stamp { self.lyrics = lyrics }
+                    if self.itemRequest == metadataStamp, self.current?.id == track.id { self.lyrics = lyrics }
                 } catch {
-                    if self.playRequest == stamp { self.resolving = false; self.error = error is CancellationError ? nil : error.localizedDescription }
+                    if self.playRequest == stamp { self.resolving = false; self.resolvingTrackID = nil; self.error = error is CancellationError ? nil : error.localizedDescription }
                 }
             }
             return
@@ -163,21 +166,22 @@ final class ListeningSpace: ObservableObject {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
             let item = AVPlayerItem(url: url); current = track; position = 0; duration = 0; error = nil; lyrics = []; sharedAt = nil; artworkImage = nil; lastTick = .now
+            itemRequest = UUID()
             statusObserver = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
-                Task { @MainActor in if item?.status == .failed { self?.error = track.qqMID == nil ? "音频未能播放，请检查音频地址" : "QQ 音乐音频暂未能播放，请重新登录或在官方 App 播放"; self?.pause() } }
+                Task { @MainActor in if let self, let item, item === self.player.currentItem, item.status == .failed { self.error = track.qqMID == nil ? "音频未能播放，请检查音频地址" : "QQ 音乐音频暂未能播放，请重新登录或在官方 App 播放"; self.pause() } }
             }
             player.replaceCurrentItem(with: item); player.play(); nowPlaying(); lastSync = .distantPast
             if let artwork = track.artwork, let cover = QQWire.imageURL(artwork) {
-                let stamp = playRequest
+                let stamp = itemRequest
                 Task {
                     if let (data, _) = try? await URLSession.shared.data(from: cover), data.count < 3_000_000,
-                       let image = UIImage(data: data), self.playRequest == stamp { self.artworkImage = image; self.nowPlaying() }
+                       let image = UIImage(data: data), self.itemRequest == stamp { self.artworkImage = image; self.nowPlaying() }
                 }
             }
         } catch { self.error = "音频会话未启动" }
     }
     func resume() { guard current != nil, player.currentItem != nil else { return }; try? AVAudioSession.sharedInstance().setActive(true); player.play() }
-    func pause() { player.pause(); playRequest = UUID(); resolving = false; nowPlaying(); lastSync = .distantPast }
+    func pause() { player.pause(); playRequest = UUID(); resolving = false; resolvingTrackID = nil; nowPlaying(); lastSync = .distantPast }
     func toggle() { playing ? pause() : resume() }
     func seek(_ value: Double) { guard value.isFinite else { return }; let target = max(0, min(duration > 0 ? duration : value, value)); player.seek(to: CMTime(seconds: target, preferredTimescale: 600)); position = target; nowPlaying(); lastSync = .distantPast }
     func next() {
@@ -192,7 +196,7 @@ final class ListeningSpace: ObservableObject {
     }
     func disconnectQQ() async {
         if current?.qqMID != nil, let current { remove(current) }
-        playRequest = UUID(); resolving = false
+        playRequest = UUID(); resolving = false; resolvingTrackID = nil
         queue.removeAll { $0.qqMID != nil }; persist(); await qq.disconnect()
     }
     private func nowPlaying() {

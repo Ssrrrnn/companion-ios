@@ -2,7 +2,7 @@
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
-## Current release: 0.8.1
+## Current release: 0.8.2
 
 The home screen includes location-based Open-Meteo weather, an editable relationship start date and a sidebar for settings, notification permissions, health summaries and actual web-reading receipts. New shared little notes join the existing diaries, calendar moods and keepsakes. Proactive delivery now uses the Morrow-only backend; Telegram and QQ chat transports are disabled.
 

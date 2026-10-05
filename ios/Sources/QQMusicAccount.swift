@@ -58,7 +58,7 @@ final class QQMusicSpace: ObservableObject {
     private let noRedirect = QQNoRedirect()
     var accountID: String { QQWire.account(values) }
     var connected: Bool { !accountID.isEmpty && !QQWire.musicKey(values).isEmpty }
-    private var values: [String: String] { Dictionary(cookies.filter(\.active).map { ($0.name, $0.value) }, uniquingKeysWith: { old, _ in old }) }
+    private var values: [String: String] { QQWire.cookieValues(cookies.filter(\.active).compactMap(\.native)) }
     init() {
         cookies = QQCredentialStore.read().filter { $0.active && QQWire.cookieDomain($0.domain) }
         let config = URLSessionConfiguration.ephemeral
@@ -75,7 +75,7 @@ final class QQMusicSpace: ObservableObject {
     }
     func inspectLogin() async {
         let raw = await webCookies()
-        let values = Dictionary(raw.map { ($0.name, $0.value) }, uniquingKeysWith: { old, _ in old })
+        let values = QQWire.cookieValues(raw)
         loginReady = !QQWire.account(values).isEmpty && !QQWire.musicKey(values).isEmpty
     }
     private func webCookies() async -> [HTTPCookie] {
@@ -88,14 +88,16 @@ final class QQMusicSpace: ObservableObject {
         let saved = raw.filter { allowed.contains($0.name) || $0.name.hasPrefix("ptnick_") }.map {
             QQCookie(name: $0.name, value: $0.value, domain: $0.domain, path: $0.path, expires: $0.expiresDate)
         }
-        let values = Dictionary(saved.map { ($0.name, $0.value) }, uniquingKeysWith: { old, _ in old })
+        let values = QQWire.cookieValues(saved.compactMap(\.native))
         guard !QQWire.account(values).isEmpty, !QQWire.musicKey(values).isEmpty else {
             error = "还没有获得 QQ 音乐登录状态。请在官网完成登录，再点同步。"; return false
         }
         do {
             try QQCredentialStore.save(saved)
-            generation = UUID(); busy = false; cookies = saved; playlists = []; membership = .unknown; refreshedAt = nil; error = nil
-            await refresh(); return true
+            let sameAccount = accountID == QQWire.account(values)
+            generation = UUID(); busy = false; cookies = saved; membership = .unknown; error = nil
+            if !sameAccount { playlists = []; nickname = "QQ 音乐"; avatar = ""; refreshedAt = nil }
+            return await refresh()
         } catch { self.error = "登录信息未能安全保存，请重试。"; return false }
     }
     func disconnect() async {
@@ -148,8 +150,12 @@ final class QQMusicSpace: ObservableObject {
         try checked(block)
         return object
     }
-    func refresh() async {
-        guard connected, !busy else { return }
+    @discardableResult func refresh() async -> Bool {
+        guard !busy else { return false }
+        guard connected else {
+            playlists = []; membership = .unknown; refreshedAt = nil; nickname = "QQ 音乐"; avatar = ""
+            error = "QQ 音乐登录已失效，请重新登录"; return false
+        }
         busy = true; error = nil; membership = .unknown
         let stamp = generation
         defer { if stamp == generation { busy = false } }
@@ -165,20 +171,21 @@ final class QQMusicSpace: ObservableObject {
                 avatar = QQWire.string(creator["headpic"] ?? creator["avatar"])
             }
         } catch { if stamp == generation { self.error = "账号资料暂未同步，歌单将继续尝试读取" } }
-        guard stamp == generation else { return }
+        guard stamp == generation else { return false }
         var memberships: [QQMembership] = []
         for method in ["SRFVipQuery_V2", "SRFVipQuery"] {
             if let result = try? await rpc(module: "userInfo.VipQueryServer", method: method, params: ["uin_list": [uin]]) {
                 memberships.append(QQWire.membership(result, account: uin))
             }
-            guard stamp == generation else { return }
+            guard stamp == generation else { return false }
         }
         if memberships.contains(.svip) { membership = .svip }
         else if memberships.contains(.vip) { membership = .vip }
         else if memberships.count == 2 && memberships.allSatisfy({ $0 == .ordinary }) { membership = .ordinary }
-        var result: [QQPlaylist] = []
+        var result = playlists
         var completed = 0
         for collected in [false, true] {
+            var section: [QQPlaylist] = []
             do {
                 for page in 0..<25 {
                     let start = page * 200
@@ -188,24 +195,26 @@ final class QQMusicSpace: ObservableObject {
                     let endpoint = collected ? "https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg" : "https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss"
                     let object = try await request(endpoint, params: common.merging(parameters) { _, new in new }); try checked(object)
                     guard let data = object["data"] as? [String: Any], let rows = data[collected ? "cdlist" : "disslist"] as? [[String: Any]] else { throw ConnectionError.server("这一组歌单暂未同步") }
-                    result += rows.compactMap { QQWire.playlist($0, collected: collected) }
+                    section += rows.compactMap { QQWire.playlist($0, collected: collected) }
                     if rows.count < 200 { break }
                     if page == 24 { self.error = "已读取前 5000 个歌单" }
                 }
-                completed += 1
+                result = QQWire.replacingPlaylists(result, with: section, collected: collected); completed += 1
             } catch { if stamp == generation { self.error = collected ? "收藏歌单暂未同步，可稍后刷新" : "创建歌单暂未同步，请刷新或重新登录" } }
-            guard stamp == generation else { return }
+            guard stamp == generation else { return false }
         }
-        if !result.contains(where: { $0.id == "liked" }) {
-            if let page = try? await songs(in: QQPlaylist(id: "liked", title: "我喜欢", cover: "", count: 0)) {
-                result.insert(QQPlaylist(id: "liked", title: "我喜欢", cover: page.songs.first?.artwork ?? "", count: page.total), at: 0)
-                completed += 1
-            }
+        if let page = try? await songs(in: QQPlaylist(id: "liked", title: "我喜欢", cover: "", count: 0)) {
+            result.removeAll { $0.id == "liked" }
+            result.insert(QQPlaylist(id: "liked", title: "我喜欢", cover: page.songs.first?.artwork ?? "", count: page.total), at: 0)
+            completed += 1
         }
-        guard stamp == generation else { return }
+        guard stamp == generation else { return false }
         if completed > 0 {
             var ids = Set<String>(); playlists = result.filter { ids.insert($0.id).inserted }; refreshedAt = .now
+            return true
         }
+        error = "登录信息已保存在本机，但歌单尚未同步成功。请重试，或在官网重新登录。"
+        return false
     }
     func songs(in playlist: QQPlaylist, offset: Int = 0) async throws -> QQSongPage {
         let object: [String: Any]
@@ -220,7 +229,7 @@ final class QQMusicSpace: ObservableObject {
             detail = (object["cdlist"] as? [[String: Any]])?.first ?? [:]
         }
         guard let rows = (detail["songlist"] ?? detail["songList"]) as? [[String: Any]] else { throw ConnectionError.server("这个歌单暂时无法读取，请在 QQ 音乐检查是否可见") }
-        let total = max(offset + rows.count, QQWire.integer(detail["total_song_num"] ?? detail["totalSongNum"] ?? detail["songnum"] ?? playlist.count))
+        let total = max(rows.count > 100 ? rows.count : offset + rows.count, QQWire.integer(detail["total_song_num"] ?? detail["totalSongNum"] ?? detail["songnum"] ?? playlist.count))
         let slice = rows.count > 100 ? Array(rows.dropFirst(offset).prefix(100)) : rows
         return QQSongPage(songs: slice.compactMap(QQWire.song), total: total, nextOffset: offset + slice.count,
                          upstreamHasMore: detail["hasmore"] == nil ? nil : QQWire.integer(detail["hasmore"]) != 0)
@@ -264,52 +273,162 @@ final class QQMusicSpace: ObservableObject {
 struct QQMusicLoginView: View {
     @ObservedObject var account: QQMusicSpace
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var saving = false
+    @State private var loading = true
+    @State private var webError: String?
+    @State private var reloadID = 0
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 Text("在 QQ 音乐官网登录，完成后点下方同步。登录信息只保存在这台设备。").font(.caption).foregroundStyle(.secondary).padding()
-                QQLoginWeb(account: account)
+                HStack {
+                    if loading { ProgressView().controlSize(.small) }
+                    Text(account.loginReady ? "已检测到音乐登录，点下方同步" : "等待官网完成登录")
+                        .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("qq-login-status")
+                    Spacer()
+                    Button("重新载入") { reloadID += 1 }.font(.caption).disabled(saving)
+                }.padding(.horizontal).padding(.bottom, 8)
+                QQLoginWeb(account: account, loading: $loading, webError: $webError, reloadID: reloadID)
+                if let webError { Text(webError).font(.caption).foregroundStyle(.secondary).padding(.horizontal) }
                 if let error = account.error { Text(error).font(.caption).foregroundStyle(.secondary).padding(.horizontal) }
                 Button(saving ? "正在同步…" : "完成登录并同步歌单") {
                     saving = true
                     Task { if await account.completeLogin() { dismiss() }; saving = false }
-                }.buttonStyle(.borderedProminent).padding().disabled(saving).accessibilityIdentifier("qq-login-sync")
+                }.buttonStyle(.borderedProminent).padding().disabled(saving || account.busy).accessibilityIdentifier("qq-login-sync")
             }.navigationTitle("连接 QQ 音乐").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
         }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await account.inspectLogin() } } }
     }
 }
 private struct QQLoginWeb: UIViewRepresentable {
     let account: QQMusicSpace
-    func makeCoordinator() -> Coordinator { Coordinator(account: account) }
-    func makeUIView(context: Context) -> WKWebView {
+    @Binding var loading: Bool
+    @Binding var webError: String?
+    let reloadID: Int
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    func makeUIView(context: Context) -> QQLoginContainer {
         let configuration = WKWebViewConfiguration(); configuration.websiteDataStore = account.webStore
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator; view.uiDelegate = context.coordinator
         view.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15"
-        Task { await account.prepareWebSession(); view.load(URLRequest(url: URL(string: "https://y.qq.com/n/ryqq/profile")!)) }
-        return view
+        let container = QQLoginContainer(main: view)
+        context.coordinator.container = container
+        context.coordinator.lastReload = reloadID
+        account.webStore.httpCookieStore.add(context.coordinator)
+        let coordinator = context.coordinator
+        coordinator.preparation = Task {
+            await account.prepareWebSession()
+            guard !Task.isCancelled, coordinator.active else { return }
+            view.load(URLRequest(url: URL(string: "https://y.qq.com/n/ryqq/profile")!))
+            await account.inspectLogin()
+        }
+        return container
     }
-    func updateUIView(_ view: WKWebView, context: Context) {}
-    @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
-        let account: QQMusicSpace
-        init(account: QQMusicSpace) { self.account = account }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { Task { await account.inspectLogin() } }
+    func updateUIView(_ view: QQLoginContainer, context: Context) {
+        context.coordinator.parent = self
+        if context.coordinator.lastReload != reloadID {
+            context.coordinator.lastReload = reloadID
+            if let url = view.top.url, url.scheme == "https" { view.top.reload() }
+            else { view.top.load(URLRequest(url: URL(string: "https://y.qq.com/n/ryqq/profile")!)) }
+        }
+    }
+    static func dismantleUIView(_ view: QQLoginContainer, coordinator: Coordinator) {
+        coordinator.active = false; coordinator.preparation?.cancel()
+        coordinator.parent.account.webStore.httpCookieStore.remove(coordinator)
+        view.stop()
+    }
+    @MainActor final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKHTTPCookieStoreObserver {
+        var parent: QQLoginWeb
+        weak var container: QQLoginContainer?
+        var lastReload = 0
+        var active = true
+        var preparation: Task<Void, Never>?
+        init(parent: QQLoginWeb) { self.parent = parent }
+        func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+            Task { guard active else { return }; await parent.account.inspectLogin() }
+        }
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            guard active else { return }; parent.loading = true; parent.webError = nil
+        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard active else { return }; parent.loading = false
+            Task { await parent.account.inspectLogin() }
+        }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard active else { return }; parent.loading = false; parent.webError = "登录网页已停止响应，请重新载入。"
+        }
+        private func failed(_ error: Error) {
+            guard active, (error as NSError).code != NSURLErrorCancelled else { return }
+            parent.loading = false; parent.webError = "登录网页未能加载，请检查网络后重新载入。"
+        }
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = action.request.url else { decisionHandler(.cancel); return }
-            if url.absoluteString == "about:blank" { decisionHandler(.allow); return }
-            if ["mqq", "mqqapi", "mqqopensdkapi", "qqmusic", "weixin"].contains(url.scheme ?? ""), action.navigationType == .linkActivated {
-                UIApplication.shared.open(url); decisionHandler(.cancel); return
+            let origin = action.sourceFrame.securityOrigin
+            switch QQWire.loginNavigation(url, sourceHost: origin.host, sourceScheme: origin.protocol) {
+            case .webpage: decisionHandler(.allow)
+            case .app:
+                decisionHandler(.cancel)
+                UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                    Task { @MainActor in
+                        guard let self, self.active else { return }
+                        self.parent.loading = false
+                        if !opened { self.parent.webError = "这台手机未能打开登录 App，请在官网选择其他登录方式。" }
+                    }
+                }
+            case .blocked: decisionHandler(.cancel)
             }
-            let host = url.host?.lowercased() ?? ""
-            let trusted = ["qq.com", "tencent.com", "qqmusic.com", "gtimg.com", "qpic.cn"].contains { host == $0 || host.hasSuffix("." + $0) }
-            decisionHandler(url.scheme == "https" && trusted ? .allow : .cancel)
         }
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            // Keep the official popup in the same isolated cookie store.
-            if action.targetFrame == nil { webView.load(action.request) }
-            return nil
+            guard active, action.targetFrame == nil, let container, let url = action.request.url,
+                  QQWire.loginNavigation(url, sourceHost: action.sourceFrame.securityOrigin.host, sourceScheme: action.sourceFrame.securityOrigin.protocol) == .webpage,
+                  QQWire.loginHost(action.sourceFrame.securityOrigin.host), container.popups.count < 3 else { return nil }
+            // Preserve WebKit's supplied configuration and opener for the auth callback.
+            let popup = WKWebView(frame: .zero, configuration: configuration)
+            popup.customUserAgent = webView.customUserAgent; popup.navigationDelegate = self; popup.uiDelegate = self
+            container.present(popup); return popup
         }
+        func webViewDidClose(_ webView: WKWebView) {
+            container?.close(webView); parent.loading = false
+            Task { await parent.account.inspectLogin() }
+        }
+    }
+}
+private final class QQLoginContainer: UIView {
+    let main: WKWebView
+    private(set) var popups: [WKWebView] = []
+    var top: WKWebView { popups.last ?? main }
+    private let closeButton = UIButton(type: .system)
+    init(main: WKWebView) {
+        self.main = main; super.init(frame: .zero)
+        addSubview(main)
+        closeButton.setTitle("返回 QQ 音乐", for: .normal)
+        closeButton.backgroundColor = .secondarySystemBackground
+        closeButton.layer.cornerRadius = 12
+        closeButton.accessibilityIdentifier = "qq-login-popup-back"
+        closeButton.addAction(UIAction { [weak self] _ in if let self, let popup = self.popups.last { self.close(popup) } }, for: .touchUpInside)
+        addSubview(closeButton); closeButton.isHidden = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func layoutSubviews() {
+        super.layoutSubviews(); main.frame = bounds
+        for popup in popups { popup.frame = CGRect(x: 0, y: 48, width: bounds.width, height: max(0, bounds.height - 48)) }
+        closeButton.frame = CGRect(x: 12, y: 4, width: max(0, min(180, bounds.width - 24)), height: 40)
+    }
+    func present(_ popup: WKWebView) {
+        popups.append(popup); addSubview(popup); bringSubviewToFront(closeButton)
+        closeButton.isHidden = false; setNeedsLayout()
+    }
+    func close(_ popup: WKWebView) {
+        guard let index = popups.firstIndex(where: { $0 === popup }) else { return }
+        for view in popups[index...] { view.stopLoading(); view.navigationDelegate = nil; view.uiDelegate = nil; view.removeFromSuperview() }
+        popups.removeSubrange(index...); closeButton.isHidden = popups.isEmpty
+    }
+    func stop() {
+        main.stopLoading(); main.navigationDelegate = nil; main.uiDelegate = nil
+        if let popup = popups.first { close(popup) }
     }
 }

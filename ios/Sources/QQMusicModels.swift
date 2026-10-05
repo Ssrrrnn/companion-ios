@@ -24,6 +24,9 @@ struct QQSongPage {
     let nextOffset: Int
     var upstreamHasMore: Bool? = nil
     var hasMore: Bool { !songs.isEmpty && (upstreamHasMore ?? (nextOffset < total)) }
+    func canContinue(after existingIDs: Set<String>, offset: Int) -> Bool {
+        hasMore && nextOffset > offset && songs.contains { !existingIDs.contains($0.id) }
+    }
 }
 struct TimedLyric: Identifiable, Equatable {
     let time: Double
@@ -50,6 +53,37 @@ struct TimedLyric: Identifiable, Equatable {
 }
 // Protocol adapters are written for Morrow. No third-party player code is bundled.
 enum QQWire {
+    enum LoginNavigation: Equatable { case webpage, app, blocked }
+    static func loginHost(_ host: String) -> Bool {
+        let host = host.lowercased()
+        return ["qq.com", "tencent.com", "qqmusic.com", "gtimg.com", "qpic.cn"].contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+    static func loginNavigation(_ url: URL, sourceHost: String, sourceScheme: String) -> LoginNavigation {
+        if url.absoluteString == "about:blank" { return .webpage }
+        guard url.user == nil, url.password == nil else { return .blocked }
+        if url.scheme == "https", loginHost(url.host ?? "") { return .webpage }
+        // Official pages also launch their login app through JavaScript navigation.
+        if ["mqq", "mqqapi", "mqqopensdkapi", "qqmusic", "weixin"].contains(url.scheme ?? ""),
+           sourceScheme == "https", loginHost(sourceHost) { return .app }
+        return .blocked
+    }
+    static func cookieValues(_ cookies: [HTTPCookie]) -> [String: String] {
+        // Prefer the music website's account over a generic QQ session with the same name.
+        let candidates = cookies.filter { cookieDomain($0.domain) && ($0.expiresDate == nil || $0.expiresDate! > .now) }
+        let sorted = candidates.sorted {
+            let left = $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            let right = $1.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            if (left == "qq.com") != (right == "qq.com") { return left != "qq.com" }
+            if left != right { return left < right }
+            return $0.path.count > $1.path.count
+        }
+        return Dictionary(sorted.map { ($0.name, $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
+    static func replacingPlaylists(_ previous: [QQPlaylist], with incoming: [QQPlaylist], collected: Bool) -> [QQPlaylist] {
+        let retained = previous.filter { $0.collected != collected || ($0.id == "liked" && !incoming.contains(where: { $0.id == "liked" })) }
+        var ids = Set<String>()
+        return (incoming + retained).filter { ids.insert($0.id).inserted }
+    }
     static func string(_ value: Any?) -> String {
         if let value = value as? String { return value }
         if let value = value as? NSNumber { return value.stringValue }

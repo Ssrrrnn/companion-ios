@@ -1,7 +1,68 @@
 import XCTest
+import WebKit
 @testable import Companion
 
 final class QQMusicTests: XCTestCase {
+    @MainActor func testWebCookieChangesDetectMusicLoginWithoutNavigation() async throws {
+        let account = QQMusicSpace()
+        await account.inspectLogin()
+        XCTAssertFalse(account.loginReady)
+        let completed = await account.completeLogin()
+        XCTAssertFalse(completed)
+        XCTAssertNotNil(account.error)
+        func set(_ name: String, _ value: String) async throws {
+            let cookie = try XCTUnwrap(HTTPCookie(properties: [.domain: ".y.qq.com", .path: "/", .name: name, .value: value, .secure: "TRUE"]))
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                account.webStore.httpCookieStore.setCookie(cookie) { continuation.resume() }
+            }
+        }
+        try await set("uin", "10001")
+        try await set("p_skey", "genericQQSession")
+        await account.inspectLogin()
+        XCTAssertFalse(account.loginReady)
+        try await set("qm_keyst", "testMusicSession")
+        await account.inspectLogin()
+        XCTAssertTrue(account.loginReady)
+        // Detection alone must not persist or upload these test credentials.
+    }
+    func testLoginNavigationAllowsOfficialJavaScriptAppLaunchOnly() throws {
+        let app = try XCTUnwrap(URL(string: "qqmusic://login"))
+        XCTAssertEqual(QQWire.loginNavigation(app, sourceHost: "y.qq.com", sourceScheme: "https"), .app)
+        XCTAssertEqual(QQWire.loginNavigation(app, sourceHost: "y.qq.com.evil.test", sourceScheme: "https"), .blocked)
+        XCTAssertEqual(QQWire.loginNavigation(app, sourceHost: "y.qq.com", sourceScheme: "http"), .blocked)
+        XCTAssertEqual(QQWire.loginNavigation(try XCTUnwrap(URL(string: "https://ssl.ptlogin2.qq.com/login")), sourceHost: "y.qq.com", sourceScheme: "https"), .webpage)
+        XCTAssertEqual(QQWire.loginNavigation(try XCTUnwrap(URL(string: "https://token@y.qq.com/")), sourceHost: "y.qq.com", sourceScheme: "https"), .blocked)
+    }
+    func testCookieSelectionPrefersMusicAccountAndIgnoresExpiredOrForeignCookies() throws {
+        func cookie(_ domain: String, value: String, expires: Date? = nil) throws -> HTTPCookie {
+            var properties: [HTTPCookiePropertyKey: Any] = [.domain: domain, .path: "/", .name: "uin", .value: value]
+            if let expires { properties[.expires] = expires }
+            return try XCTUnwrap(HTTPCookie(properties: properties))
+        }
+        let generic = try cookie(".qq.com", value: "10001")
+        let music = try cookie(".y.qq.com", value: "10002")
+        let expired = try cookie("c.y.qq.com", value: "10003", expires: .distantPast)
+        let foreign = try cookie("evil.test", value: "10004")
+        XCTAssertEqual(QQWire.account(QQWire.cookieValues([generic, expired, foreign, music])), "10002")
+        XCTAssertEqual(QQWire.account(QQWire.cookieValues([music, foreign, generic, expired])), "10002")
+    }
+    func testPlaylistRefreshKeepsFailedSectionAndRemovesSuccessfulEmptySection() {
+        let liked = QQPlaylist(id: "liked", title: "我喜欢", cover: "", count: 10)
+        let created = QQPlaylist(id: "100", title: "创建", cover: "", count: 1)
+        let saved = QQPlaylist(id: "200", title: "收藏", cover: "", count: 2, collected: true)
+        let next = QQPlaylist(id: "300", title: "新建", cover: "", count: 3)
+        let refreshed = QQWire.replacingPlaylists([liked, created, saved], with: [next], collected: false)
+        XCTAssertEqual(Set(refreshed.map(\.id)), ["liked", "200", "300"])
+        let emptied = QQWire.replacingPlaylists(refreshed, with: [], collected: true)
+        XCTAssertEqual(Set(emptied.map(\.id)), ["liked", "300"])
+    }
+    func testRepeatedPlaylistPageCannotKeepLoadingForever() {
+        let track = ListeningTrack(id: "same", title: "Song", url: "https://example.com/audio.mp3", kind: "music")
+        let page = QQSongPage(songs: [track], total: 300, nextOffset: 200)
+        XCTAssertTrue(page.canContinue(after: [], offset: 100))
+        XCTAssertFalse(page.canContinue(after: ["same"], offset: 100))
+        XCTAssertFalse(page.canContinue(after: [], offset: 200))
+    }
     private func membership(_ fields: [String: Any], uin: String = "10001", code: Int = 0) -> [String: Any] {
         ["code": 0, "req_1": ["code": code, "data": ["uin_map": [uin: ["vip_info": fields]]]]]
     }

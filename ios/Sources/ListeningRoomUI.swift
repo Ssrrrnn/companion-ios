@@ -163,7 +163,7 @@ private struct QQAccountCard: View {
                 MusicCover(url: account.avatar, size: 42, icon: "person.crop.circle")
                 VStack(alignment: .leading, spacing: 4) {
                     Text(account.connected ? account.nickname : "连接 QQ 音乐").font(.subheadline.weight(.semibold))
-                    Text(account.connected ? account.membership.label : "把你的歌单带进小家").font(.caption).foregroundStyle(.secondary)
+                    Text(account.connected ? (account.refreshedAt == nil ? "已保存登录，歌单待同步" : account.membership.label) : "把你的歌单带进小家").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if account.busy { ProgressView() }
@@ -266,8 +266,11 @@ private struct QQPlaylistView: View {
         Task {
             do {
                 let page = try await account.songs(in: playlist, offset: offset)
-                var ids = Set(songs.map(\.id)); songs += page.songs.filter { ids.insert($0.id).inserted }
-                offset = page.nextOffset; more = page.hasMore
+                let existingIDs = Set(songs.map(\.id))
+                let canContinue = page.canContinue(after: existingIDs, offset: offset)
+                var ids = existingIDs; songs += page.songs.filter { ids.insert($0.id).inserted }
+                if page.hasMore && !canContinue { error = "QQ 音乐没有返回下一页新歌曲，已保留加载的内容。" }
+                offset = page.nextOffset; more = canContinue
             } catch { self.error = error.localizedDescription }
             busy = false
         }

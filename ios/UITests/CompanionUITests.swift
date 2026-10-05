@@ -204,6 +204,12 @@ final class CompanionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["对方正在听"].exists)
         XCTAssertFalse(app.staticTexts["对方在线"].exists)
         XCTAssertTrue(app.buttons["添加音乐或播客"].exists)
+        connect.tap()
+        XCTAssertTrue(app.staticTexts["qq-login-status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["重新载入"].exists)
+        XCTAssertTrue(app.buttons["qq-login-sync"].exists)
+        app.buttons["关闭"].tap()
+        XCTAssertTrue(connect.waitForExistence(timeout: 3))
     }
 
 }
