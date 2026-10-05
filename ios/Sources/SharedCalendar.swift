@@ -63,6 +63,13 @@ final class SharedSpace: ObservableObject {
     var isPreview = false
     #endif
     init() {
+        #if DEBUG
+        // Seed before a sheet's onAppear reads the note, rather than in the
+        // scene task after cached edits from a previous test have been loaded.
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
+            preview(); return
+        }
+        #endif
         entries = Self.read("shared_calendar_cache_v1") ?? []
         pending = Self.read("shared_calendar_pending_v1") ?? []
         deletions = Set(Self.read("shared_calendar_deletions_v1") as [String]? ?? [])

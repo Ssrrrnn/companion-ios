@@ -38,18 +38,30 @@ final class CompanionUITests: XCTestCase {
         // SwiftUI's vertical TextField is exposed as either TextField or TextView across iOS versions.
         let input = app.descendants(matching: .any).matching(identifier: "mood-note").firstMatch
         XCTAssertTrue(input.waitForExistence(timeout: 10)); input.tap()
-        if let value = input.value as? String, !value.isEmpty { input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count)) }
+        // A tap may place the caret before the existing note. Test editing without
+        // assuming a caret position or deleting text that should be preserved.
+        let originalNote = input.value as? String ?? ""
         input.typeText("My calendar record")
+        let editedNote = input.value as? String ?? ""
+        XCTAssertTrue(editedNote.contains("My calendar record"))
+        XCTAssertTrue(editedNote.contains(originalNote))
         app.swipeUp()
         app.buttons["save-shared-mood"].tap()
-        XCTAssertTrue(app.staticTexts["My calendar record"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts[editedNote].waitForExistence(timeout: 5))
+        app.buttons["记录我的心情"].tap()
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        XCTAssertEqual(input.value as? String, editedNote)
+        app.buttons["取消"].tap()
+        app.buttons["mood-selected-day"].tap()
+        XCTAssertTrue(app.buttons["关闭"].waitForExistence(timeout: 5))
         app.buttons["关闭"].tap()
         app.navigationBars.buttons.firstMatch.tap()
         app.buttons["聊天"].tap()
         let composer = app.textViews["chat-composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         XCTAssertEqual(composer.value as? String, "")
-        XCTAssertFalse(app.staticTexts["My calendar record"].exists)
+        XCTAssertFalse(app.staticTexts[editedNote].exists)
     }
     func testLongHistoryHomeChatNavigationPerformance() {
         let app = XCUIApplication()
