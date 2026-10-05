@@ -16,6 +16,11 @@ final class CompanionModel: ObservableObject {
     private(set) var chatRows: [ChatRow] = []
     @Published var favorites: [Keepsake] = []
     @Published var diaries: [Keepsake] = []
+    @Published var memories: [Keepsake] = []
+    @Published private(set) var keepsakeLoading = Set<String>()
+    @Published private(set) var keepsakeErrors: [String: String] = [:]
+    @Published private(set) var keepsakeMore = Set<String>()
+    private var keepsakeCursors: [String: String] = [:]
     @Published var pending: PendingMessage?
     @Published var sending = false
     @Published var error: String?
@@ -46,6 +51,13 @@ final class CompanionModel: ObservableObject {
             pending = try? JSONDecoder().decode(PendingMessage.self, from: data)
         }
         voiceDurations = UserDefaults.standard.dictionary(forKey: voicesKey) as? [String: Double] ?? [:]
+        for kind in ["diaries", "favorites", "memories"] {
+            if let data = UserDefaults.standard.data(forKey: "keepsake_" + kind + "_v1"), let page = try? JSONDecoder().decode(Collection.self, from: data) {
+                setKeepsakes(page.items, kind: kind)
+                if page.has_more == true { keepsakeMore.insert(kind) }
+                keepsakeCursors[kind] = page.next_before
+            }
+        }
     }
     func refresh() async {
         #if DEBUG
@@ -71,6 +83,10 @@ final class CompanionModel: ObservableObject {
             let result: History = try await connection.request("v1/history")
             try ConnectionKey.save(connection.token)
             UserDefaults.standard.set(connection.base, forKey: "server_url")
+            if api.base != connection.base || api.token != connection.token {
+                for kind in ["diaries", "favorites", "memories"] { setKeepsakes([], kind: kind); UserDefaults.standard.removeObject(forKey: "keepsake_" + kind + "_v1") }
+                keepsakeCursors = [:]; keepsakeMore = []; keepsakeErrors = [:]
+            }
             api = connection
             conversationGeneration += 1
             messages = result.messages
@@ -128,13 +144,38 @@ final class CompanionModel: ObservableObject {
         #if DEBUG
         guard !isPreview else { return }
         #endif
+        await withTaskGroup(of: Void.self) { group in
+            for kind in ["diaries", "favorites", "memories"] { group.addTask { await self.loadKeepsakes(kind: kind) } }
+        }
+    }
+    private func setKeepsakes(_ items: [Keepsake], kind: String) {
+        switch kind { case "diaries": diaries = items; case "favorites": favorites = items; case "memories": memories = items; default: break }
+    }
+    func keepsakes(_ kind: String) -> [Keepsake] {
+        switch kind { case "diaries": return diaries; case "favorites": return favorites; case "memories": return memories; default: return [] }
+    }
+    func loadKeepsakes(kind: String, more: Bool = false) async {
+        #if DEBUG
+        guard !isPreview else { return }
+        #endif
+        guard ["diaries", "favorites", "memories"].contains(kind), !keepsakeLoading.contains(kind), !more || keepsakeCursors[kind] != nil else { return }
+        keepsakeLoading.insert(kind); keepsakeErrors[kind] = nil
+        defer { keepsakeLoading.remove(kind) }
+        let connection = api
         do {
-            async let saved: Collection = api.request("v1/favorites")
-            async let diary: Collection = api.request("v1/diaries")
-            let result = try await (saved, diary)
-            favorites = result.0.items
-            diaries = result.1.items
-        } catch { self.error = error.localizedDescription }
+            let cursor = more ? "&before=" + (keepsakeCursors[kind] ?? "") : ""
+            let page: Collection = try await connection.request("v1/\(kind)?limit=50\(cursor)", timeout: 20)
+            guard api.base == connection.base, api.token == connection.token else { return }
+            let previous = more ? keepsakes(kind) : []
+            var ids = Set<String>()
+            let items = (previous + page.items).filter { ids.insert($0.id).inserted }
+            setKeepsakes(items, kind: kind)
+            let progressed = !more || items.count > previous.count
+            if page.has_more == true, let cursor = page.next_before, !cursor.isEmpty, cursor.count <= 19, cursor.utf8.allSatisfy({ (48...57).contains($0) }), progressed {
+                keepsakeMore.insert(kind); keepsakeCursors[kind] = cursor
+            } else { keepsakeMore.remove(kind); keepsakeCursors[kind] = nil }
+            UserDefaults.standard.set(try JSONEncoder().encode(Collection(items: items, has_more: keepsakeMore.contains(kind), next_before: keepsakeCursors[kind])), forKey: "keepsake_" + kind + "_v1")
+        } catch { keepsakeErrors[kind] = "暂未取得新的内容，下面保留最近同步的珍藏。" }
     }
     private func voiceURL(_ id: String) -> URL {
         let hash = SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()

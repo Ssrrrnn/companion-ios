@@ -40,6 +40,8 @@ final class PersonalSpace: ObservableObject {
     @Published private(set) var moments: [SavedMoment] = []
     @Published private(set) var notes: [LittleNote] = []
     @Published private(set) var moods: [MoodEntry] = []
+    @Published private(set) var music: [SavedMusic] = []
+    @Published private(set) var pinned: Set<String> = []
     @Published private(set) var avatar: UIImage?
     @Published private(set) var userAvatar: UIImage?
     @Published private(set) var wallpaper: UIImage?
@@ -50,6 +52,8 @@ final class PersonalSpace: ObservableObject {
         moments = read("saved_moments_v1") ?? []
         notes = read("little_notes_v1") ?? []
         moods = read("mood_entries_v1") ?? []
+        music = read("saved_music_v1") ?? []
+        pinned = Set(read("pinned_keepsakes_v1") as [String]? ?? [])
         avatar = loadImage("companion-avatar.jpg")
         userAvatar = loadImage("user-avatar.jpg")
         wallpaper = loadImage("chat-wallpaper.jpg")
@@ -69,6 +73,16 @@ final class PersonalSpace: ObservableObject {
     }
     func removeMoment(_ id: String) {
         moments.removeAll { $0.id == id }; save(moments, key: "saved_moments_v1")
+    }
+    func isMusicSaved(_ id: String) -> Bool { music.contains { $0.id == id } }
+    func toggleMusic(_ share: MusicShare) {
+        if isMusicSaved(share.id) { music.removeAll { $0.id == share.id } }
+        else { music.insert(SavedMusic(share: share), at: 0) }
+        save(music, key: "saved_music_v1")
+    }
+    func togglePin(_ id: String) {
+        if !pinned.insert(id).inserted { pinned.remove(id) }
+        save(Array(pinned), key: "pinned_keepsakes_v1")
     }
     func addNote(_ text: String) {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)

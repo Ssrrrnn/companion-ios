@@ -47,6 +47,10 @@ struct CompanionApp: App {
                         shared.preview()
                         reading.preview(library); activity.preview(); weather.preview()
                         model.connected = true
+                        let previewAt = ISO8601DateFormatter().string(from: .now)
+                        model.diaries = [Keepsake(id: "preview-diary", text: "把今天留成一页\n读到一段喜欢的话，想起你说过，平淡的日子也值得记住。今天没有赶着做什么，只把这点安静好好收了起来。", at: previewAt)]
+                        model.favorites = [Keepsake(id: "preview-favorite", text: "慢慢来，我一直在这里。", at: previewAt, note: "想把这份安心，留给以后的我们。")]
+                        model.memories = [Keepsake(id: "preview-memory", text: "喜欢把日常留在两个人的小家里，也喜欢一起读书、听歌。", at: previewAt)]
                         model.discardPending()
                         model.messages = [
                             Message(id: "preview:1", role: "assistant", text: "忙完了？过来，让我看看你。"),
@@ -54,6 +58,9 @@ struct CompanionApp: App {
                             Message(id: "preview:3", role: "assistant", text: "那就赖着。你今天已经做得够多了。"),
                             Message(id: "preview:4", role: "assistant", text: "我把旁边的位置留给你，什么都不用想。")
                         ]
+                        if ProcessInfo.processInfo.arguments.contains("--music-card") {
+                            model.messages.append(Message(id: "preview:music", role: "assistant", text: "想把这首歌留给今晚，也留给你。\n[示例音乐 · 预览歌手](https://y.qq.com/n/ryqq/songDetail/Preview001)"))
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--long-chat") {
                             let history = (0..<1000).map { Message(id: "history:\($0)", role: $0.isMultiple(of: 2) ? "assistant" : "user", text: "第\($0)段回忆。慢慢说，我一直在。") }
                             model.messages = history + model.messages
@@ -164,6 +171,7 @@ struct CompanionTabs: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .morrowOpenChat)) { _ in path = [.chat] }
+        .onReceive(NotificationCenter.default.publisher(for: .morrowOpenListening)) { _ in path = [.listening] }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
@@ -171,6 +179,7 @@ struct CompanionTabs: View {
                 else if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
                 else if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
                 else if ProcessInfo.processInfo.arguments.contains("--listening") { path = [.listening] }
+                else if ProcessInfo.processInfo.arguments.contains("--keepsakes") { selection = 2; path = [] }
                 else if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
             }
             #endif
@@ -396,46 +405,5 @@ struct HomeView: View {
             SharedCalendarView()
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { timeline = false } } }
         }
-    }
-}
-
-struct KeepsakesView: View {
-    @EnvironmentObject private var model: CompanionModel
-    @EnvironmentObject private var space: PersonalSpace
-    @State private var kind = 0
-    var body: some View {
-        VStack(spacing: 0) {
-            Picker("珍藏", selection: $kind) { Text("日记").tag(0); Text("他的收藏").tag(1); Text("我收藏的").tag(2) }
-                .pickerStyle(.segmented).padding()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    if kind == 2 {
-                        if space.moments.isEmpty { ContentUnavailableView("喜欢的话，就收好", systemImage: "heart", description: Text("长按聊天气泡，选择“收藏这句”。")) }
-                        ForEach(space.moments) { item in
-                            keepsakeCard(QuotedText(item.text).body, label: item.role == "user" ? "我说的" : "他说的")
-                                .contextMenu {
-                                    Button("取消收藏", role: .destructive) { space.removeMoment(item.id) }
-                                    ShareLink(item: item.text) { Label("分享", systemImage: "square.and.arrow.up") }
-                                }
-                        }
-                        Text("“我收藏的”保存在这台手机里。").font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        let items = kind == 0 ? model.diaries : model.favorites
-                        if items.isEmpty { ContentUnavailableView("还没有留下片段", systemImage: "book", description: Text("连接后，这里会显示已有的日记和收藏。")) }
-                        ForEach(items) { item in keepsakeCard(item.text, label: kind == 0 ? "日记" : "他的收藏") }
-                    }
-                }.padding(.horizontal, 20).padding(.bottom, 24).frame(maxWidth: 720).frame(maxWidth: .infinity)
-            }.refreshable { await model.loadKeepsakes() }
-            if let error = model.error { Text(error).font(.caption).foregroundStyle(.red).padding() }
-        }.background { GlassWallpaper() }.navigationTitle("留给我们的").toolbar(.visible, for: .tabBar)
-            .task { if model.connected { await model.loadKeepsakes() } }
-    }
-    private func keepsakeCard(_ text: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(label, systemImage: "heart").font(.caption).foregroundStyle(.secondary)
-            Text(text).lineSpacing(6).textSelection(.enabled)
-            ShareLink(item: text) { Label("分享", systemImage: "square.and.arrow.up").font(.caption) }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
-            .glassSurface(in: RoundedRectangle(cornerRadius: 26))
     }
 }

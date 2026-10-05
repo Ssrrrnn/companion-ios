@@ -42,9 +42,16 @@ struct Message: Codable, Identifiable, Equatable {
     let role: String
     let text: String
 }
-struct Keepsake: Decodable, Identifiable { let id: String; let text: String }
+struct Keepsake: Codable, Identifiable, Equatable {
+    let id: String
+    let text: String
+    var at: String? = nil
+    var note: String? = nil
+    var kind: String? = nil
+    var importance: Int? = nil
+}
 struct History: Decodable { let messages: [Message] }
-struct Collection: Decodable { let items: [Keepsake] }
+struct Collection: Codable { let items: [Keepsake]; var has_more: Bool? = nil; var next_before: String? = nil }
 struct ServerFailure: Decodable { let error: String }
 struct Reply: Decodable {
     let type: String

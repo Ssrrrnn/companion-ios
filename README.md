@@ -2,7 +2,11 @@
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
-## Current release: 0.8.2
+## Current release: 0.9.0
+
+Music shared in chat appears as a tappable card with song title, artist, provider, favorite and playback actions. The companion can search actual public QQ Music catalog results and prepare a share in the same reply; no account cookies leave the phone. QQ cards use the existing account connection and rights check for playback, while NetEase cards open externally. Voice reads the song label rather than its URL.
+
+Keepsakes is now a card cabinet for diaries, his favorites, local saved messages, real long-term memories, little notes and local music favorites. Entries have previews and full detail views, dates where recorded, search over loaded content, local pinning, sharing and a chat-draft action. Server collections paginate and retain the last synchronized page on the phone for offline reading. Shared notes can be browsed by month and new notes can be private on the device or shared through the existing calendar sync.
 
 The home screen includes location-based Open-Meteo weather, an editable relationship start date and a sidebar for settings, notification permissions, health summaries and actual web-reading receipts. New shared little notes join the existing diaries, calendar moods and keepsakes. Proactive delivery now uses the Morrow-only backend; Telegram and QQ chat transports are disabled.
 

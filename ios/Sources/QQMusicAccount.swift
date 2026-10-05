@@ -249,9 +249,11 @@ final class QQMusicSpace: ObservableObject {
     }
     func playbackURL(_ track: ListeningTrack) async throws -> URL {
         guard let mid = track.qqMID, QQWire.identifier(mid) else { throw ConnectionError.server("歌曲标识不支持") }
-        let media = track.mediaMID.flatMap { QQWire.identifier($0) ? $0 : nil } ?? mid
+        var media = track.mediaMID.flatMap { QQWire.identifier($0) ? $0 : nil }
+        if media == nil, let detail = try? await catalogTrack(mid: mid), let candidate = detail.mediaMID, QQWire.identifier(candidate) { media = candidate }
+        let mediaID = media ?? mid
         let object = try await rpc(module: "vkey.GetVkeyServer", method: "CgiGetVkey", params: [
-            "guid": String(UInt64.random(in: 10_000_000...99_999_999)), "songmid": [mid], "songtype": [0], "uin": accountID, "loginflag": 1, "platform": "20", "filename": ["M500" + media + ".mp3"]], clientType: 19)
+            "guid": String(UInt64.random(in: 10_000_000...99_999_999)), "songmid": [mid], "songtype": [0], "uin": accountID, "loginflag": 1, "platform": "20", "filename": ["M500" + mediaID + ".mp3"]], clientType: 19)
         let data = (object["req_1"] as? [String: Any])?["data"] as? [String: Any] ?? [:]
         let info = (data["midurlinfo"] as? [[String: Any]])?.first ?? [:]
         let path = QQWire.string(info["purl"])
@@ -259,6 +261,13 @@ final class QQMusicSpace: ObservableObject {
         let bases = data["sip"] as? [String] ?? ["https://ws.stream.qqmusic.qq.com/"]
         for base in bases { if let url = QQWire.audioURL(base + path) { return url } }
         throw ConnectionError.server("QQ 音乐没有返回可用的安全音频地址")
+    }
+    func catalogTrack(mid: String) async throws -> ListeningTrack {
+        guard QQWire.identifier(mid) else { throw ConnectionError.server("歌曲标识不支持") }
+        let object = try await rpc(module: "music.pf_song_detail_svr", method: "get_song_detail_yqq", params: ["song_mid": mid])
+        let data = (object["req_1"] as? [String: Any])?["data"] as? [String: Any] ?? [:]
+        guard let row = data["track_info"] as? [String: Any], let track = QQWire.song(row), track.qqMID == mid else { throw ConnectionError.server("暂时没有取得这首歌的资料") }
+        return track
     }
     func lyrics(_ track: ListeningTrack) async -> [TimedLyric] {
         guard let mid = track.qqMID else { return [] }

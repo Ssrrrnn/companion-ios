@@ -2,9 +2,11 @@ import SwiftUI
 
 struct ListeningRoomView: View {
     @EnvironmentObject private var listening: ListeningSpace
+    @EnvironmentObject private var space: PersonalSpace
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("companion_name") private var companionName = "他"
+    @AppStorage("chat_draft_v1") private var draft = ""
     @State private var login = false
     @State private var library = false
     @State private var adding = false
@@ -60,6 +62,14 @@ struct ListeningRoomView: View {
                     Text("\(companionName)可以看到分享的歌曲和进度，也可以在聊天里回应。")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if let current = listening.current, let share = MusicShare.from(current.url, label: current.title + (current.artist.isEmpty ? "" : " · " + current.artist)) {
+                    HStack {
+                        Button { draft = "想把这首歌分享给你。\n" + share.markdown; NotificationCenter.default.post(name: .morrowOpenChat, object: nil) } label: { Label("分享这首给他", systemImage: "paperplane") }
+                        Spacer()
+                        Button { space.toggleMusic(share) } label: { Image(systemName: space.isMusicSaved(share.id) ? "heart.fill" : "heart") }.accessibilityLabel("收藏当前歌曲")
+                    }.font(.subheadline).foregroundStyle(accent)
+                }
+                Button("想听他分享一首歌") { draft = "想听你分享一首适合我们现在心情的歌，也想知道你为什么选它。"; NotificationCenter.default.post(name: .morrowOpenChat, object: nil) }.font(.caption).foregroundStyle(accent)
                 QQAccountCard(account: listening.qq, onLogin: { login = true }, onLibrary: { library = true }, onDisconnect: { disconnect = true })
                 HStack {
                     Text("我们的播放单").font(.headline)
@@ -279,6 +289,8 @@ private struct QQPlaylistView: View {
 private struct QQSongRow: View {
     let track: ListeningTrack
     @EnvironmentObject private var listening: ListeningSpace
+    @EnvironmentObject private var space: PersonalSpace
+    @AppStorage("chat_draft_v1") private var draft = ""
     var body: some View {
         HStack(spacing: 12) {
             MusicCover(url: track.artwork, size: 44)
@@ -286,7 +298,14 @@ private struct QQSongRow: View {
             Spacer()
             Button { listening.add(track); listening.play(track) } label: { Image(systemName: "play.circle.fill").font(.title2) }.accessibilityLabel("播放 " + track.title)
         }.padding(12).glassSurface(in: RoundedRectangle(cornerRadius: 18))
-            .contextMenu { Button("加入播放单") { listening.add(track) }; Link("在 QQ 音乐打开", destination: URL(string: track.url)!) }
+            .contextMenu {
+                Button("加入播放单") { listening.add(track) }
+                if let share = MusicShare.from(track.url, label: track.title + (track.artist.isEmpty ? "" : " · " + track.artist)) {
+                    Button(space.isMusicSaved(share.id) ? "取消音乐收藏" : "收藏这首歌") { space.toggleMusic(share) }
+                    Button("分享这首给他") { draft = "想把这首歌分享给你。\n" + share.markdown; NotificationCenter.default.post(name: .morrowOpenChat, object: nil) }
+                }
+                Link("在 QQ 音乐打开", destination: URL(string: track.url)!)
+            }
     }
 }
 private struct AddListeningView: View {

@@ -67,7 +67,7 @@ struct ChatView: View {
                     }
                     ForEach(model.chatRows.suffix(visibleCount)) { row in
                         let piece = row.piece
-                        bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil, showAvatar: row.startsGroup)
+                        bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil, showAvatar: row.startsGroup, music: piece.music)
                             .padding(.top, row.startsGroup ? 14 : 7).id(piece.anchor)
                     }
                     if let pending = model.pending {
@@ -175,7 +175,7 @@ struct ChatView: View {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
     }
     private var chatBackground: some View { GlassWallpaper() }
-    private func bubble(_ message: Message, voiceID: String? = nil, showAvatar: Bool = false) -> some View {
+    private func bubble(_ message: Message, voiceID: String? = nil, showAvatar: Bool = false, music: MusicShare? = nil) -> some View {
         let outgoing = message.role == "user"
         let content = QuotedText(message.text)
         return HStack(alignment: .top, spacing: 8) {
@@ -193,7 +193,8 @@ struct ChatView: View {
                         .background(outgoing ? Color.white.opacity(0.15) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 }
                 if let voiceID, model.hasAudio(voiceID) { audioBar(voiceID, outgoing: outgoing) }
-                Text(content.body).font(.body).lineSpacing(3)
+                if let music { MusicShareCard(share: music) }
+                else { Text(content.body).font(.body).lineSpacing(3) }
                 if space.isSaved(message.id) { Image(systemName: "heart.fill").font(.caption2).opacity(0.8).accessibilityLabel("已收藏") }
             }
             .padding(.vertical, 12).padding(.horizontal, 16)

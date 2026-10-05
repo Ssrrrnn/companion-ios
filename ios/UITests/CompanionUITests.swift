@@ -212,4 +212,35 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(connect.waitForExistence(timeout: 3))
     }
 
+    func testKeepsakeCardsOpenRealSectionsAndPinDetail() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--keepsakes", "--reset-draft"]
+        app.launch()
+        let diaries = app.buttons["keepsake-diaries"]
+        XCTAssertTrue(diaries.waitForExistence(timeout: 5))
+        for _ in 0..<3 { if diaries.isHittable { break }; app.swipeUp() }
+        diaries.tap()
+        let entry = app.buttons.containing(.staticText, identifier: "把今天留成一页").firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 3))
+        entry.tap()
+        let pin = app.buttons["pin-keepsake"]
+        for _ in 0..<3 { if pin.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(pin.isHittable)
+        pin.tap()
+        XCTAssertTrue(app.buttons["discuss-keepsake"].exists)
+    }
+
+    func testMusicCardOpensAndCanBeSaved() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--music-card", "--reset-draft"]
+        app.launch()
+        let card = app.buttons["music-share-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+        let save = app.buttons["save-shared-music"]
+        XCTAssertTrue(save.waitForExistence(timeout: 3))
+        save.tap()
+        XCTAssertTrue(app.buttons["music-share-play"].exists)
+        XCTAssertTrue(app.buttons["拿这首和他聊聊"].exists)
+    }
 }
