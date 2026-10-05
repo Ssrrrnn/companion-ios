@@ -49,7 +49,7 @@ final class CompanionUITests: XCTestCase {
         app.buttons["save-shared-mood"].tap()
         app.swipeUp()
         XCTAssertTrue(app.staticTexts[editedNote].waitForExistence(timeout: 5))
-        app.buttons["记录我的心情"].tap()
+        app.buttons["edit-shared-mood"].tap()
         XCTAssertTrue(input.waitForExistence(timeout: 5))
         XCTAssertEqual(input.value as? String, editedNote)
         app.buttons["取消"].tap()

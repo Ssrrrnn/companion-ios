@@ -275,6 +275,7 @@ struct SharedCalendarView: View {
                     ForEach(records) { entry in entryCard(entry) }
                     HStack {
                         Button("记录我的心情") { beginEditing() }.buttonStyle(.borderedProminent).tint(moodInk)
+                            .accessibilityIdentifier("edit-shared-mood")
                         if records.contains(where: { $0.actor == "user" && $0.kind == "mood" }) {
                             Button("删除我的心情", role: .destructive) { confirmDelete = true }.buttonStyle(.bordered)
                         }
