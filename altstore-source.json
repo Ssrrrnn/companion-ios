@@ -16,6 +16,15 @@
       "category": "lifestyle",
       "versions": [
         {
+          "version": "0.8.0",
+          "buildVersion": "26.1",
+          "minOSVersion": "18.0",
+          "size": 4340190,
+          "localizedDescription": "Morrow 0.8.0\n主页定位天气、相恋天数、侧边栏与通知设置。\n一起听支持音频、播客 RSS、锁屏／控制中心与后台播放；QQ／网易云歌曲链接在对应平台打开。\n主动消息与私人日记、小纸条、心情、原话收藏迁入 Morrow；新增只读网页 MCP 与真实浏览日志。\n免费 AltStore 签名限制：关闭 App 后没有服务器推送，不能直接读取 HealthKit；可分享手动健康概要。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.8.0-build26.1/Companion.ipa",
+          "date": "2026-10-05T12:58:54Z"
+        },
+        {
           "version": "0.7.0",
           "buildVersion": "24.1",
           "minOSVersion": "18.0",
@@ -110,7 +119,8 @@
         "entitlements": [],
         "privacy": {
           "NSCalendarsFullAccessUsageDescription": "在你授权后，小家读取你所选日历的日程标题和时间，供伴侣查看，并在你指定的日历添加日程。不会读取或修改其他手机内容。",
-          "NSLocationWhenInUseUsageDescription": "在你开启分享并授权后，小家在使用期间采样当前位置、时间和精度，供伴侣实际调用。关闭分享后不再上传定位。"
+          "NSLocationWhenInUseUsageDescription": "在你开启分享并授权后，小家在使用期间采样当前位置、时间和精度，供伴侣实际调用。关闭分享后不再上传定位。",
+          "NSHealthShareUsageDescription": "在支持健康读取的签名版本中，经你授权，Morrow 读取今日步数概要。你选择分享后，伴侣才能看到这份概要。"
         }
       }
     }
