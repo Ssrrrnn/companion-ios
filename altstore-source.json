@@ -16,6 +16,15 @@
       "category": "lifestyle",
       "versions": [
         {
+          "version": "0.8.1",
+          "buildVersion": "29.1",
+          "minOSVersion": "18.0",
+          "size": 4548246,
+          "localizedDescription": "Morrow 0.8.1\n一起听重做：双头像、旋转唱片、封面、歌词、播放进度、播放模式与播放单。\n新增 QQ 音乐官方网页登录连接，读取创建和收藏歌单、我喜欢、歌曲搜索，以及经账号核验的会员状态。\nQQ 登录信息只存本机 Keychain；歌曲按当前账号接口返回的权限尝试播放，支持后台、锁屏和控制中心。\n目前使用网页会话连接，尚无 QQ 音乐官方 SDK 的 App 授权。QQ 账号实测需用户在手机完成登录；会员和歌曲能否读取取决于平台实际返回。\n播放信息可分享给伴侣；没有第二台设备同时播放，也不把头像显示为虚构在线状态。网易云暂保留外链方式。\n免费 AltStore 的通知和健康读取限制不变。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.8.1-build29.1/Companion.ipa",
+          "date": "2026-10-05T14:59:32Z"
+        },
+        {
           "version": "0.8.0",
           "buildVersion": "26.1",
           "minOSVersion": "18.0",
