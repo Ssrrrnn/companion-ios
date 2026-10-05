@@ -16,6 +16,15 @@
       "category": "lifestyle",
       "versions": [
         {
+          "version": "0.6.0",
+          "buildVersion": "20.1",
+          "minOSVersion": "18.0",
+          "size": 882493,
+          "localizedDescription": "0.6.0 · 他自己的时间\n\n新增「他的日常」：自动唤醒、每日规划、实际行动与随笔。他可自己读书、查询百科、回看记忆、写想法，执行成功和未完成分别标记。默认约50分钟一次、深夜约2小时；聊天活跃时避让，可暂停。使用现有模型的正常 API 额度。\n他会自动记录自己的每日心情到共享日历，主页欢迎语随时间和活动变化。\n共读正文在前台自动分批同步，双方有独立阅读进度。他实际读到正文并保存感想后才推进页码；关闭App后仍可读已经同步的页。长按书籍可删除本地数据与服务端正文，原始文件保留。\n聊天改为通透玻璃气泡，每组第一句显示头像；设置可分别自定义双方头像与名字。iOS 18为兼容玻璃材质。\n手机权限新增定位：系统授权后，他可实际请求前台手机重新采样，返回时间与精度；离线不冒充实时。\n通话方案已参考 Tidal_Echo，本版尚未提供通话功能。",
+          "downloadURL": "https://github.com/Ssrrrnn/companion-ios/releases/download/v0.6.0-build20.1/Companion.ipa",
+          "date": "2026-10-05T05:18:26Z"
+        },
+        {
           "version": "0.5.2",
           "buildVersion": "16.1",
           "minOSVersion": "18.0",
@@ -91,7 +100,8 @@
       "appPermissions": {
         "entitlements": [],
         "privacy": {
-          "NSCalendarsFullAccessUsageDescription": "在你授权后，小家读取你所选日历的日程标题和时间，供伴侣查看，并在你指定的日历添加日程。不会读取或修改其他手机内容。"
+          "NSCalendarsFullAccessUsageDescription": "在你授权后，小家读取你所选日历的日程标题和时间，供伴侣查看，并在你指定的日历添加日程。不会读取或修改其他手机内容。",
+          "NSLocationWhenInUseUsageDescription": "在你开启分享并授权后，小家在使用期间采样当前位置、时间和精度，供伴侣实际调用。关闭分享后不再上传定位。"
         }
       }
     }
