@@ -46,7 +46,7 @@ struct SettingsView: View {
                 if space.userAvatar != nil { Button("恢复我的文字头像") { space.removeImage(wallpaper: false, userAvatar: true) } }
             }
             Section("我们的纪念日") {
-                Toggle("记住相遇的日子", isOn: $anniversaryEnabled)
+                Toggle("显示相恋天数", isOn: $anniversaryEnabled)
                     .onChange(of: anniversaryEnabled) { _, enabled in
                         if enabled && UserDefaults.standard.object(forKey: "anniversary_date") == nil {
                             anniversary = Date.now.timeIntervalSince1970
@@ -103,10 +103,13 @@ struct SettingsView: View {
             Section("版本与更新") {
                 Text("Morrow · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
                 Link("查看版本更新", destination: URL(string: "https://github.com/Ssrrrnn/companion-ios/releases")!)
-                Text("主动消息继续通过 QQ 或 Telegram 到达，打开小家可以同步查看聊天。")
+                Text("主动消息已迁入 Morrow；Telegram 与 QQ 消息通道停用。当前免费签名版本需打开 App 同步。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("一起做的事") {
+                NavigationLink("通知、天气与健康", value: CompanionRoute.permissions)
+                NavigationLink("一起听音乐与播客", value: CompanionRoute.listening)
+                NavigationLink("网上散步与浏览日志", value: CompanionRoute.browsing)
                 NavigationLink("一起读书", value: CompanionRoute.books)
                 NavigationLink("我们的日历", value: CompanionRoute.calendar)
                 NavigationLink("他的日常与自主唤醒", value: CompanionRoute.activity)

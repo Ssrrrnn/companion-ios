@@ -17,6 +17,10 @@ struct CompanionApp: App {
     @StateObject private var reading = ReadingSync()
     @StateObject private var activity = ActivitySpace()
     @StateObject private var location = LocationContext()
+    @StateObject private var notifications = MorrowNotifications()
+    @StateObject private var weather = WeatherSpace()
+    @StateObject private var listening = ListeningSpace()
+    @StateObject private var health = HealthSpace()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app_appearance") private var appearance = "system"
     var body: some Scene {
@@ -25,12 +29,15 @@ struct CompanionApp: App {
                 .environmentObject(library).environmentObject(device)
                 .environmentObject(shared).environmentObject(phone)
                 .environmentObject(reading).environmentObject(activity).environmentObject(location)
+                .environmentObject(notifications).environmentObject(weather).environmentObject(listening).environmentObject(health)
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environment(\.calendar, SharedDates.calendar)
                 .environment(\.timeZone, SharedDates.calendar.timeZone)
+                .onReceive(NotificationCenter.default.publisher(for: .morrowStopVoice)) { _ in model.stopAudio() }
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
                     device.setActive(scenePhase == .active)
+                    if scenePhase == .active { await notifications.reload() }
                     guard scenePhase == .active else { model.stopAudio(); location.background(); return }
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
@@ -38,7 +45,7 @@ struct CompanionApp: App {
                         if ProcessInfo.processInfo.arguments.contains("--books") { library.addPreviewBook() }
                         model.isPreview = true
                         shared.preview()
-                        reading.preview(library); activity.preview()
+                        reading.preview(library); activity.preview(); weather.preview()
                         model.connected = true
                         model.discardPending()
                         model.messages = [
@@ -56,6 +63,7 @@ struct CompanionApp: App {
                     #endif
                     while !Task.isCancelled {
                         await model.refresh()
+                        notifications.observe(model.messages)
                         do { try await Task.sleep(for: .seconds(15)) } catch { return }
                     }
                 }
@@ -69,6 +77,7 @@ struct CompanionApp: App {
                         if model.connected {
                             await phone.tick(api: model.api, device: device, location: location)
                             await shared.sync(api: model.api)
+                            await listening.sync(api: model.api)
                         }
                         do { try await Task.sleep(for: .seconds(3)) } catch { return }
                     }
@@ -93,10 +102,15 @@ struct CompanionApp: App {
 struct CompanionTabs: View {
     @State private var selection = 0
     @State private var path: [CompanionRoute] = []
+    @State private var drawer = false
     private var navigationSelection: Binding<Int> {
         Binding(get: { selection }, set: { value in
             if value == 1 {
-                if path.isEmpty { path.append(.chat) }
+                path = [.chat]
+            } else if value == 3 {
+                path = [.settings]
+            } else if value == 4 {
+                path = [.listening]
             } else {
                 path.removeAll(); selection = value
             }
@@ -107,7 +121,7 @@ struct CompanionTabs: View {
             Group {
                 if selection == 2 { KeepsakesView() }
                 else if selection == 3 { SettingsView() }
-                else { HomeView(selection: navigationSelection) }
+                else { HomeView(selection: navigationSelection, onMenu: { withAnimation(.easeOut(duration: 0.2)) { drawer = true } }) }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { dock }
             .navigationDestination(for: CompanionRoute.self) { route in
@@ -122,9 +136,33 @@ struct CompanionTabs: View {
                     SharedCalendarView()
                 case .activity:
                     CompanionActivityView()
+                case .settings: SettingsView()
+                case .permissions: EverydayPermissionsView()
+                case .listening: ListeningRoomView()
+                case .browsing: BrowsingLogView()
                 }
             }
         }
+        .overlay(alignment: .leading) {
+            if drawer {
+                ZStack(alignment: .leading) {
+                    Color.black.opacity(0.22).ignoresSafeArea().onTapGesture { withAnimation { drawer = false } }
+                    VStack(alignment: .leading, spacing: 26) {
+                        HStack { Text("Morrow").font(MorrowType.script(38)); Spacer(); Button { withAnimation { drawer = false } } label: { Image(systemName: "xmark") }.accessibilityLabel("关闭侧边栏") }
+                        Text("我们的小世界").font(.caption).foregroundStyle(.secondary)
+                        drawerItem("一起听", icon: "music.note", route: .listening)
+                        drawerItem("网上散步", icon: "globe", route: .browsing)
+                        drawerItem("通知与健康", icon: "bell.badge", route: .permissions)
+                        drawerItem("手机权限", icon: "iphone", route: .device)
+                        Divider()
+                        drawerItem("设置", icon: "slider.horizontal.3", route: .settings)
+                        Spacer()
+                        Text("把日常，留在这里。").font(.system(.subheadline, design: .serif)).foregroundStyle(.secondary)
+                    }.padding(28).frame(width: 290).frame(maxHeight: .infinity).background(homePaper).transition(.move(edge: .leading))
+                }.accessibilityIdentifier("home-sidebar")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .morrowOpenChat)) { _ in path = [.chat] }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
@@ -136,12 +174,15 @@ struct CompanionTabs: View {
             #endif
         }
     }
+    private func drawerItem(_ title: String, icon: String, route: CompanionRoute) -> some View {
+        Button { drawer = false; path = [route] } label: { Label(title, systemImage: icon).font(.body).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
+    }
     private var dock: some View {
         HStack(spacing: 3) {
             dockItem("小家", icon: "house", tag: 0)
             dockItem("聊天", icon: "bubble.left.and.bubble.right", tag: 1)
             dockItem("珍藏", icon: "heart.text.square", tag: 2)
-            dockItem("设置", icon: "slider.horizontal.3", tag: 3)
+            dockItem("一起听", icon: "music.note", tag: 4)
         }.padding(7).glassSurface(in: Capsule())
             .frame(maxWidth: 420).padding(.horizontal, 28).padding(.bottom, 8).padding(.top, 10)
     }
@@ -157,7 +198,7 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat, books, device, calendar, activity }
+enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing }
 
 struct HomeView: View {
     @EnvironmentObject private var activity: ActivitySpace
@@ -172,6 +213,7 @@ struct HomeView: View {
     @AppStorage("anniversary_date") private var anniversary = Date.now.timeIntervalSince1970
     @AppStorage("chat_draft_v1") private var draft = ""
     @Binding var selection: Int
+    var onMenu: () -> Void = {}
     @State private var moodSheet = false
     @State private var noteSheet = false
     @State private var moodEmoji = "🤍"
@@ -189,7 +231,7 @@ struct HomeView: View {
                         Text("A LITTLE WORLD, WITH YOU").font(.system(size: 9, weight: .medium)).tracking(2.2).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button { selection = 3 } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }.accessibilityLabel("小家设置")
+                    Button(action: onMenu) { Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).padding(10) }.accessibilityLabel("打开侧边栏")
                 }
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .top) {
@@ -198,9 +240,11 @@ struct HomeView: View {
                         if anniversaryEnabled {
                             let days = max(0, Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date(timeIntervalSince1970: anniversary)), to: Calendar.current.startOfDay(for: .now)).day ?? 0)
                             VStack(alignment: .trailing, spacing: 3) {
-                                Text("DAY \(days + 1)").font(.caption.monospaced().weight(.semibold))
-                                Text("一起走过").font(.caption2).foregroundStyle(.secondary)
+                                Text("相恋 \(days + 1) 天").font(.caption.monospaced().weight(.semibold))
+                                Text("从这一天开始").font(.caption2).foregroundStyle(.secondary)
                             }.padding(.top, 8)
+                        } else {
+                            Button { selection = 3 } label: { Label("记住第一天", systemImage: "heart").font(.caption) }.padding(.top, 8)
                         }
                     }
                     TimelineView(.periodic(from: .now, by: 60)) { context in
@@ -213,6 +257,8 @@ struct HomeView: View {
                             .glassSurface(in: RoundedRectangle(cornerRadius: 18), tint: homeAccent)
                     }
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                WeatherCard()
+                ListeningHomeCard()
                 NavigationLink(value: CompanionRoute.activity) {
                     HStack(spacing: 16) {
                         Image(systemName: "pawprint").font(.title2).foregroundStyle(homeAccent)
@@ -274,6 +320,13 @@ struct HomeView: View {
                         Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                     }.padding(17).glassSurface(in: RoundedRectangle(cornerRadius: 22))
                 }.buttonStyle(.plain)
+                if let note = shared.entries.last(where: { $0.kind == "note" && $0.actor == "assistant" }) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("他留给你的纸条", systemImage: "envelope.open").font(.caption).foregroundStyle(homeAccent)
+                        Text(note.text).font(.subheadline).lineSpacing(5).lineLimit(5)
+                        Text(note.day).font(.caption2).foregroundStyle(.tertiary)
+                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading).glassSurface(in: RoundedRectangle(cornerRadius: 24))
+                }
                 if let note = space.notes.first {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("最近的小纸条").font(.caption).foregroundStyle(.secondary)
@@ -309,9 +362,18 @@ struct HomeView: View {
             List {
                 Section {
                     TextField("下次一起做的事，或想留住的念头", text: $noteText, axis: .vertical).lineLimit(3...6)
-                    Button("收好这张纸条") { space.addNote(noteText); noteText = "" }.disabled(noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } header: { Text("写一张小纸条") } footer: { Text("小纸条保存在这台手机里。") }
-                Section("已经收好的") {
+                    Button("收好这张纸条") { shared.save(SharedEntry(id: UUID().uuidString, actor: "user", kind: "note", day: SharedDates.key(.now), title: "小纸条", text: String(noteText.prefix(2000)), emoji: "")); noteText = "" }.disabled(noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } header: { Text("写一张小纸条") } footer: { Text("新纸条同步到双方的小家，旧纸条仍保留在手机里。") }
+                Section("两个人的小纸条") {
+                    ForEach(shared.entries.filter { $0.kind == "note" }.reversed()) { note in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(note.actor == "assistant" ? "他留给你的" : "我留下的").font(.caption).foregroundStyle(.secondary)
+                            Text(note.text).textSelection(.enabled)
+                            Text(note.day).font(.caption2).foregroundStyle(.tertiary)
+                        }.padding(.vertical, 6)
+                    }
+                }
+                Section("手机里原来的纸条") {
                     ForEach(space.notes) { note in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(note.text).textSelection(.enabled)

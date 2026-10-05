@@ -35,6 +35,7 @@ final class LocationContext: NSObject, ObservableObject, @preconcurrency CLLocat
     }
     func request() async -> PhoneLocation? {
         guard enabled, authorized, UIApplication.shared.applicationState == .active, continuation == nil else { return nil }
+        if let value, let sampled = ISO8601DateFormatter().date(from: value.sampled_at), Date.now.timeIntervalSince(sampled) < 60 { return value }
         return await withCheckedContinuation { pending in
             continuation = pending
             timeout = Task { [weak self] in

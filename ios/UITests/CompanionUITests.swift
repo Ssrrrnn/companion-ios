@@ -174,4 +174,23 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue((input.value as? String ?? "").contains("一起读《共读示例》"))
         XCTAssertFalse(app.staticTexts["发送中"].exists)
     }
+    func testSidebarPermissionsAndListeningEntry() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--home"]
+        app.launch()
+        app.buttons["打开侧边栏"].tap()
+        XCTAssertTrue(app.buttons["通知与健康"].waitForExistence(timeout: 3))
+        app.buttons["通知与健康"].tap()
+        XCTAssertTrue(app.staticTexts["消息通知"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["允许 Morrow 通知"].exists)
+        app.terminate()
+        app.launch()
+        let listening = app.buttons["home-listening"]
+        for _ in 0..<4 { if listening.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(listening.isHittable)
+        listening.tap()
+        XCTAssertTrue(app.staticTexts["我们的播放单"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["添加音乐或播客"].exists)
+    }
+
 }

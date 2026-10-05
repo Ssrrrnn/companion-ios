@@ -159,6 +159,7 @@ final class CompanionModel: ObservableObject {
         }
         stopAudio()
         do {
+            NotificationCenter.default.post(name: .morrowPauseListening, object: nil)
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
             let audio = try AVAudioPlayer(contentsOf: voiceURL(id))
@@ -176,7 +177,8 @@ final class CompanionModel: ObservableObject {
     }
     func stopAudio() {
         playbackTask?.cancel(); playbackTask = nil
+        let hadPlayer = player != nil
         player?.stop(); player = nil; playingID = nil; playbackProgress = 0; playbackPaused = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if hadPlayer { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
 }
