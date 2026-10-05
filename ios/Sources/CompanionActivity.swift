@@ -176,8 +176,12 @@ struct CompanionActivityView: View {
                 if let state = activity.state {
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle("让他拥有自己的时间", isOn: Binding(get: { state.enabled }, set: { value in Task { await activity.setEnabled(value, api: model.api) } }))
-                        Text(state.enabled ? "下一次醒来：\(Date(timeIntervalSince1970: state.next_at).formatted(date: .abbreviated, time: .shortened))" : "自主活动已暂停")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if state.enabled {
+                            (Text("下一次醒来：") + Text(Date(timeIntervalSince1970: state.next_at), format: .dateTime.month().day().hour().minute()))
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("自主活动已暂停").font(.caption).foregroundStyle(.secondary)
+                        }
                         Text("默认约50分钟一次，深夜约2小时；最近15分钟在聊天时让出时间。会使用现有模型的 API 额度。").font(.caption).foregroundStyle(.secondary)
                     }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 22))
                     if state.plan_day == SharedDates.key(activity.selected), let plan = state.plan {
