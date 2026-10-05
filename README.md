@@ -1,6 +1,14 @@
-# 小家 · Personal iOS companion
+# Morrow · Personal iOS companion
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
+
+## Current release: 0.8.0
+
+The home screen includes location-based Open-Meteo weather, an editable relationship start date and a sidebar for settings, notification permissions, health summaries and actual web-reading receipts. New shared little notes join the existing diaries, calendar moods and keepsakes. Proactive delivery now uses the Morrow-only backend; Telegram and QQ chat transports are disabled.
+
+The listening room plays HTTPS audio and public podcast RSS enclosures, provides Apple podcast search, publishes Now Playing metadata and remote controls, and can continue playing in the background. Saved QQ/NetEase catalog links open their respective provider. The optional listening share reports this client's actual title, progress and play/pause state to the companion; it does not synchronize a second player or expose another app's playback state.
+
+The free AltStore build can request local notification permission and schedule an optional daily reminder. It has no APNs entitlement/provider setup, so server messages sync when the app opens. Direct HealthKit reading is disabled in this signing profile; users can deliberately share or remove manual steps/sleep summaries. Settings must not describe these as already granted health access or closed-app push.
 
 ## AltStore Classic updates
 
@@ -10,7 +18,7 @@ Source URL:
 https://raw.githubusercontent.com/Ssrrrnn/companion-ios/main/altstore-source.json
 ```
 
-In AltStore Classic, open Sources, tap +, paste the URL and add it. Open 小家 in this source to install/update using the same Apple account. Keep the existing app when updating. Free-account signing and normal AltServer refresh requirements still apply; this source distributes updates, it does not change signing limits.
+In AltStore Classic, open Sources, tap +, paste the URL and add it. Open Morrow in this source to install/update using the same Apple account. Keep the existing app when updating. Free-account signing and normal AltServer refresh requirements still apply; this source distributes updates, it does not change signing limits.
 
 ## Publishing changes
 
