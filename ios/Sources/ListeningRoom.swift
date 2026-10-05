@@ -9,6 +9,9 @@ struct ListeningTrack: Codable, Identifiable, Equatable {
     let url: String
     let kind: String
     var artist: String = ""
+    var qqMID: String? = nil
+    var mediaMID: String? = nil
+    var artwork: String? = nil
     var external: Bool { Self.provider(URL(string: url)?.host ?? "") != nil }
     static func provider(_ host: String) -> String? {
         let host = host.lowercased()
@@ -51,11 +54,17 @@ final class PodcastFeed: NSObject, XMLParserDelegate {
 }
 @MainActor
 final class ListeningSpace: ObservableObject {
+    let qq = QQMusicSpace()
     @Published private(set) var queue: [ListeningTrack] = []
     @Published private(set) var current: ListeningTrack?
     @Published private(set) var playing = false
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
+    @Published private(set) var resolving = false
+    @Published private(set) var lyrics: [TimedLyric] = []
+    @Published private(set) var sharedAt: Date?
+    @Published private(set) var listenedSeconds: Double = UserDefaults.standard.double(forKey: "listening_seconds")
+    @Published var mode = 0
     @Published var error: String?
     @Published var sharing = UserDefaults.standard.bool(forKey: "listening_share") { didSet { UserDefaults.standard.set(sharing, forKey: "listening_share"); lastSync = .distantPast } }
     private let player = AVPlayer()
@@ -65,6 +74,10 @@ final class ListeningSpace: ObservableObject {
     private var lastSync = Date.distantPast
     private var lastPayload: String?
     private var pauseListener: AnyCancellable?
+    private var endListener: AnyCancellable?
+    private var playRequest = UUID()
+    private var artworkImage: UIImage?
+    private var lastTick = Date.now
     init() {
         if let data = UserDefaults.standard.data(forKey: "listening_queue"), let items = try? JSONDecoder().decode([ListeningTrack].self, from: data) { queue = items }
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
@@ -73,16 +86,28 @@ final class ListeningSpace: ObservableObject {
                 self.position = time.seconds.isFinite ? time.seconds : 0
                 let length = self.player.currentItem?.duration.seconds ?? 0
                 self.duration = length.isFinite ? max(0, length) : 0
+                let elapsed = Date.now.timeIntervalSince(self.lastTick); self.lastTick = .now
+                if self.playing && elapsed > 0 && elapsed < 3 {
+                    self.listenedSeconds += elapsed
+                    UserDefaults.standard.set(self.listenedSeconds, forKey: "listening_seconds")
+                }
                 self.nowPlaying()
             }
         }
         rateObserver = player.observe(\.rate, options: [.new]) { [weak self] _, _ in Task { @MainActor in self?.playing = (self?.player.rate ?? 0) > 0; self?.nowPlaying() } }
         pauseListener = NotificationCenter.default.publisher(for: .morrowPauseListening).sink { [weak self] _ in Task { @MainActor in self?.pause() } }
+        endListener = NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime).sink { [weak self] note in
+            Task { @MainActor in
+                guard let self, let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
+                if self.mode == 1 { self.seek(0); self.resume() } else { self.next() }
+            }
+        }
         let remote = MPRemoteCommandCenter.shared()
         remote.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.resume() }; return .success }
         remote.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
         remote.togglePlayPauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.toggle() }; return .success }
         remote.nextTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.next() }; return .success }
+        remote.previousTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.previous() }; return .success }
         remote.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.seek(event.positionTime) }; return .success
@@ -103,39 +128,78 @@ final class ListeningSpace: ObservableObject {
         queue.append(track); persist(); error = nil
     }
     func remove(_ track: ListeningTrack) {
-        if current?.id == track.id { pause(); player.replaceCurrentItem(with: nil); current = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
+        playRequest = UUID(); resolving = false
+        if current?.id == track.id { pause(); player.replaceCurrentItem(with: nil); current = nil; lyrics = []; sharedAt = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; position = 0; duration = 0 }
         queue.removeAll { $0.id == track.id }; persist()
     }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { UserDefaults.standard.set(data, forKey: "listening_queue") } }
     func play(_ track: ListeningTrack) {
+        let stamp = UUID(); playRequest = stamp; resolving = false
+        if track.qqMID != nil {
+            resolving = true; error = nil
+            Task {
+                do {
+                    let url = try await qq.playbackURL(track)
+                    guard self.playRequest == stamp else { return }
+                    self.resolving = false; self.start(track, url: url)
+                    let lyrics = await qq.lyrics(track)
+                    if self.playRequest == stamp { self.lyrics = lyrics }
+                } catch {
+                    if self.playRequest == stamp { self.resolving = false; self.error = error is CancellationError ? nil : error.localizedDescription }
+                }
+            }
+            return
+        }
         guard let url = ListeningTrack.validURL(track.url) else { error = "播放地址不正确"; return }
         if track.external {
             // A catalog link opens the authorized provider; it is not a playable audio URL.
             UIApplication.shared.open(url); error = "已打开\(ListeningTrack.provider(url.host ?? "") ?? "音乐平台")。外部 App 的实际播放状态无法由 Morrow 读取。"; return
         }
+        start(track, url: url)
+    }
+    private func start(_ track: ListeningTrack, url: URL) {
         do {
             NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
-            let item = AVPlayerItem(url: url); current = track; position = 0; duration = 0; error = nil
+            let item = AVPlayerItem(url: url); current = track; position = 0; duration = 0; error = nil; lyrics = []; sharedAt = nil; artworkImage = nil; lastTick = .now
             statusObserver = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
-                Task { @MainActor in if item?.status == .failed { self?.error = "音频未能播放，请使用可直接播放的音频地址"; self?.pause() } }
+                Task { @MainActor in if item?.status == .failed { self?.error = track.qqMID == nil ? "音频未能播放，请检查音频地址" : "QQ 音乐音频暂未能播放，请重新登录或在官方 App 播放"; self?.pause() } }
             }
             player.replaceCurrentItem(with: item); player.play(); nowPlaying(); lastSync = .distantPast
+            if let artwork = track.artwork, let cover = QQWire.imageURL(artwork) {
+                let stamp = playRequest
+                Task {
+                    if let (data, _) = try? await URLSession.shared.data(from: cover), data.count < 3_000_000,
+                       let image = UIImage(data: data), self.playRequest == stamp { self.artworkImage = image; self.nowPlaying() }
+                }
+            }
         } catch { self.error = "音频会话未启动" }
     }
     func resume() { guard current != nil, player.currentItem != nil else { return }; try? AVAudioSession.sharedInstance().setActive(true); player.play() }
-    func pause() { player.pause(); nowPlaying(); lastSync = .distantPast }
+    func pause() { player.pause(); playRequest = UUID(); resolving = false; nowPlaying(); lastSync = .distantPast }
     func toggle() { playing ? pause() : resume() }
-    func seek(_ value: Double) { guard value.isFinite else { return }; player.seek(to: CMTime(seconds: max(0, min(duration > 0 ? duration : value, value)), preferredTimescale: 600)); position = max(0, value); nowPlaying() }
+    func seek(_ value: Double) { guard value.isFinite else { return }; let target = max(0, min(duration > 0 ? duration : value, value)); player.seek(to: CMTime(seconds: target, preferredTimescale: 600)); position = target; nowPlaying(); lastSync = .distantPast }
     func next() {
+        if mode == 2, let track = queue.filter({ (!$0.external || $0.qqMID != nil) && $0.id != current?.id }).randomElement() { play(track); return }
         guard let current, let index = queue.firstIndex(where: { $0.id == current.id }), index + 1 < queue.count else { pause(); return }
-        for track in queue[(index + 1)...] where !track.external { play(track); return }; pause()
+        for track in queue[(index + 1)...] where !track.external || track.qqMID != nil { play(track); return }; pause()
+    }
+    func previous() {
+        if position > 3 { seek(0); return }
+        guard let current, let index = queue.firstIndex(where: { $0.id == current.id }), index > 0 else { seek(0); return }
+        for track in queue[..<index].reversed() where !track.external || track.qqMID != nil { play(track); return }
+    }
+    func disconnectQQ() async {
+        if current?.qqMID != nil, let current { remove(current) }
+        playRequest = UUID(); resolving = false
+        queue.removeAll { $0.qqMID != nil }; persist(); await qq.disconnect()
     }
     private func nowPlaying() {
         guard let current else { return }
         var info: [String: Any] = [MPMediaItemPropertyTitle: current.title, MPMediaItemPropertyArtist: current.artist.isEmpty ? "Morrow · 一起听" : current.artist, MPNowPlayingInfoPropertyElapsedPlaybackTime: position, MPNowPlayingInfoPropertyPlaybackRate: player.rate]
         if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
+        if let image = artworkImage { info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image } }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
     }
@@ -148,8 +212,10 @@ final class ListeningSpace: ObservableObject {
             else { data = Data("null".utf8) }
             let payload = String(decoding: data, as: UTF8.self)
             guard payload != lastPayload else { return }
+            let trackID = current?.id
             let _: PhoneOK = try await api.request("v1/context/listening", body: data)
             lastPayload = payload
+            sharedAt = sharing && trackID != nil && current?.id == trackID ? .now : nil
         } catch { self.error = "播放信息暂未同步给他" }
     }
     func episodes(feed: String) async throws -> [ListeningTrack] {
@@ -180,82 +246,4 @@ struct ListeningHomeCard: View {
             }.padding(20).glassSurface(in: RoundedRectangle(cornerRadius: 25))
         }.buttonStyle(.plain).accessibilityIdentifier("home-listening")
     }
-}
-struct ListeningRoomView: View {
-    @EnvironmentObject private var listening: ListeningSpace
-    @State private var title = ""
-    @State private var url = ""
-    @State private var feed = ""
-    @State private var kind = "music"
-    @State private var adding = false
-    @State private var importing = false
-    @State private var episodes: [ListeningTrack] = []
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                VStack(spacing: 20) {
-                    ZStack {
-                        Circle().fill(.black.opacity(0.85)).frame(width: 200, height: 200)
-                        ForEach(0..<5) { index in Circle().stroke(.white.opacity(0.08), lineWidth: 1).frame(width: CGFloat(180 - index * 20), height: CGFloat(180 - index * 20)) }
-                        Circle().fill(homeAccent).frame(width: 68, height: 68)
-                        Image(systemName: listening.current?.kind == "podcast" ? "mic.fill" : "music.note").foregroundStyle(.white).font(.title2)
-                    }.shadow(color: .black.opacity(0.12), radius: 15, y: 8)
-                    VStack(spacing: 6) {
-                        Text(listening.current?.title ?? "把喜欢的声音放进来").font(.system(.title3, design: .serif)).multilineTextAlignment(.center)
-                        Text(listening.current?.artist.isEmpty == false ? listening.current!.artist : "Morrow · 一起听").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if listening.duration > 0 {
-                        Slider(value: Binding(get: { min(listening.duration, listening.position) }, set: { listening.seek($0) }), in: 0...max(1, listening.duration)).accessibilityLabel("播放进度")
-                        HStack { Text(time(listening.position)); Spacer(); Text(time(listening.duration)) }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 32) {
-                        Button { listening.seek(listening.position - 15) } label: { Image(systemName: "gobackward.15") }
-                        Button { listening.toggle() } label: { Image(systemName: listening.playing ? "pause.fill" : "play.fill").font(.title2).frame(width: 62, height: 62).background(homeAccent.opacity(0.12), in: Circle()) }.accessibilityLabel(listening.playing ? "暂停" : "播放")
-                        Button { listening.next() } label: { Image(systemName: "forward.end.fill") }
-                    }.font(.title3).disabled(listening.current == nil)
-                    Toggle("把播放信息分享给他", isOn: $listening.sharing).font(.subheadline)
-                    Text("Morrow 音频支持锁屏、控制中心和后台播放。他能读取你分享的歌曲与进度；双端同步播放尚未接入。").font(.caption).foregroundStyle(.secondary)
-                }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30))
-                HStack(spacing: 12) {
-                    Link(destination: URL(string: "https://music.163.com/")!) { Label("网易云音乐", systemImage: "music.note.list").frame(maxWidth: .infinity).padding(14).glassSurface(in: RoundedRectangle(cornerRadius: 18)) }
-                    Link(destination: URL(string: "https://y.qq.com/")!) { Label("QQ 音乐", systemImage: "music.note").frame(maxWidth: .infinity).padding(14).glassSurface(in: RoundedRectangle(cornerRadius: 18)) }
-                }.font(.caption)
-                NavigationLink(value: CompanionRoute.podcasts) {
-                    HStack { Label("发现播客", systemImage: "mic"); Spacer(); Image(systemName: "arrow.up.right") }.font(.subheadline).padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 20))
-                }.buttonStyle(.plain)
-                HStack { Text("我们的播放单").font(.headline); Spacer(); Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("添加音乐或播客") }
-                if listening.queue.isEmpty { Text("添加音频直链、播客 RSS，或收藏 QQ／网易云的歌曲链接。平台歌曲在对应 App 播放。").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
-                ForEach(listening.queue) { track in
-                    HStack(spacing: 14) {
-                        Image(systemName: track.external ? "arrow.up.right.square" : track.kind == "podcast" ? "mic" : "music.note").foregroundStyle(homeAccent)
-                        VStack(alignment: .leading, spacing: 5) { Text(track.title).font(.subheadline); Text(track.external ? "在音乐平台打开" : track.kind == "podcast" ? "播客" : "音频").font(.caption2).foregroundStyle(.secondary) }
-                        Spacer(); Button { listening.play(track) } label: { Image(systemName: track.external ? "arrow.up.right" : "play.circle") }.accessibilityLabel("播放 " + track.title)
-                    }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 20)).contextMenu { Button("移除", role: .destructive) { listening.remove(track) } }
-                }
-                if let error = listening.error { Text(error).font(.caption).foregroundStyle(.secondary) }
-            }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background { GlassWallpaper() }.navigationTitle("一起听").sheet(isPresented: $adding) {
-            NavigationStack {
-                Form {
-                    Section("歌曲或音频") {
-                        TextField("名称", text: $title)
-                        TextField("HTTPS 音频或音乐平台链接", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Picker("类型", selection: $kind) { Text("音乐").tag("music"); Text("播客").tag("podcast") }
-                        Button("加入播放单") { if listening.add(title: title, url: url, kind: kind) { title = ""; url = ""; adding = false } }
-                        Text("QQ／网易云链接用于打开平台；Morrow 内播放需要可直接访问的音频地址。").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Section("导入播客") {
-                        TextField("HTTPS RSS 订阅地址", text: $feed).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button(importing ? "读取中" : "读取节目") {
-                            importing = true
-                            Task { do { episodes = try await listening.episodes(feed: feed); if episodes.isEmpty { listening.error = "这个源没有可播放的 HTTPS 节目" } } catch { listening.error = error.localizedDescription }; importing = false }
-                        }.disabled(importing)
-                        ForEach(episodes) { episode in Button { listening.add(episode) } label: { Label(episode.title, systemImage: "plus.circle") } }
-                    }
-                    if let error = listening.error { Text(error).font(.caption).foregroundStyle(.secondary) }
-                }.navigationTitle("收一段声音").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { adding = false } } }
-            }
-        }
-    }
-    private func time(_ value: Double) -> String { let seconds = Int(max(0, value)); return String(format: "%d:%02d", seconds / 60, seconds % 60) }
 }

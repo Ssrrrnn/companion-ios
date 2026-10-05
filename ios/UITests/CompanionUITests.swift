@@ -193,4 +193,17 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["添加音乐或播客"].exists)
     }
 
+    func testListeningRoomHasAccountConnectionAndDoesNotPretendPartnerOnline() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--listening", "--reset-draft"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["这一首，想和你一起听"].waitForExistence(timeout: 5))
+        let connect = app.buttons["qq-connect"]
+        for _ in 0..<3 { if connect.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(connect.isHittable)
+        XCTAssertFalse(app.staticTexts["对方正在听"].exists)
+        XCTAssertFalse(app.staticTexts["对方在线"].exists)
+        XCTAssertTrue(app.buttons["添加音乐或播客"].exists)
+    }
+
 }

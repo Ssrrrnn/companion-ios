@@ -170,6 +170,7 @@ struct CompanionTabs: View {
                 if ProcessInfo.processInfo.arguments.contains("--activity") && path.isEmpty { path = [.activity] }
                 else if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
                 else if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
+                else if ProcessInfo.processInfo.arguments.contains("--listening") { path = [.listening] }
                 else if !ProcessInfo.processInfo.arguments.contains("--home") && path.isEmpty { path = [.chat] }
             }
             #endif
