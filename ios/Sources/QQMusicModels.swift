@@ -22,7 +22,8 @@ struct QQSongPage {
     let songs: [ListeningTrack]
     let total: Int
     let nextOffset: Int
-    var hasMore: Bool { !songs.isEmpty && nextOffset < total }
+    var upstreamHasMore: Bool? = nil
+    var hasMore: Bool { !songs.isEmpty && (upstreamHasMore ?? (nextOffset < total)) }
 }
 struct TimedLyric: Identifiable, Equatable {
     let time: Double

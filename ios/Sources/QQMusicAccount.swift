@@ -139,9 +139,9 @@ final class QQMusicSpace: ObservableObject {
         let code = QQWire.integer(object["code"] ?? object["result"])
         guard code == 0 else { throw ConnectionError.server([1000, 301, 10004, 104003, -100008].contains(code) ? "QQ 音乐登录已失效或权限不足，请重新登录" : "QQ 音乐暂未返回数据，请稍后刷新") }
     }
-    private func rpc(module: String, method: String, params: [String: Any]) async throws -> [String: Any] {
+    private func rpc(module: String, method: String, params: [String: Any], clientType: Int = 24) async throws -> [String: Any] {
         let object = try await request("https://u.y.qq.com/cgi-bin/musicu.fcg", body: [
-            "comm": ["uin": accountID, "authst": QQWire.musicKey(values), "format": "json", "ct": 24, "cv": 0],
+            "comm": ["uin": accountID, "authst": QQWire.musicKey(values), "format": "json", "ct": clientType, "cv": 0],
             "req_1": ["module": module, "method": method, "param": params]])
         try checked(object)
         guard let block = object["req_1"] as? [String: Any] else { throw ConnectionError.server("QQ 音乐返回内容暂不支持") }
@@ -196,6 +196,13 @@ final class QQMusicSpace: ObservableObject {
             } catch { if stamp == generation { self.error = collected ? "收藏歌单暂未同步，可稍后刷新" : "创建歌单暂未同步，请刷新或重新登录" } }
             guard stamp == generation else { return }
         }
+        if !result.contains(where: { $0.id == "liked" }) {
+            if let page = try? await songs(in: QQPlaylist(id: "liked", title: "我喜欢", cover: "", count: 0)) {
+                result.insert(QQPlaylist(id: "liked", title: "我喜欢", cover: page.songs.first?.artwork ?? "", count: page.total), at: 0)
+                completed += 1
+            }
+        }
+        guard stamp == generation else { return }
         if completed > 0 {
             var ids = Set<String>(); playlists = result.filter { ids.insert($0.id).inserted }; refreshedAt = .now
         }
@@ -213,9 +220,10 @@ final class QQMusicSpace: ObservableObject {
             detail = (object["cdlist"] as? [[String: Any]])?.first ?? [:]
         }
         guard let rows = (detail["songlist"] ?? detail["songList"]) as? [[String: Any]] else { throw ConnectionError.server("这个歌单暂时无法读取，请在 QQ 音乐检查是否可见") }
-        let total = max(rows.count, QQWire.integer(detail["total_song_num"] ?? detail["totalSongNum"] ?? detail["songnum"] ?? playlist.count))
+        let total = max(offset + rows.count, QQWire.integer(detail["total_song_num"] ?? detail["totalSongNum"] ?? detail["songnum"] ?? playlist.count))
         let slice = rows.count > 100 ? Array(rows.dropFirst(offset).prefix(100)) : rows
-        return QQSongPage(songs: slice.compactMap(QQWire.song), total: total, nextOffset: offset + slice.count)
+        return QQSongPage(songs: slice.compactMap(QQWire.song), total: total, nextOffset: offset + slice.count,
+                         upstreamHasMore: detail["hasmore"] == nil ? nil : QQWire.integer(detail["hasmore"]) != 0)
     }
     func search(_ text: String) async throws -> [ListeningTrack] {
         let query = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
@@ -234,7 +242,7 @@ final class QQMusicSpace: ObservableObject {
         guard let mid = track.qqMID, QQWire.identifier(mid) else { throw ConnectionError.server("歌曲标识不支持") }
         let media = track.mediaMID.flatMap { QQWire.identifier($0) ? $0 : nil } ?? mid
         let object = try await rpc(module: "vkey.GetVkeyServer", method: "CgiGetVkey", params: [
-            "guid": String(UInt64.random(in: 10_000_000...99_999_999)), "songmid": [mid], "songtype": [0], "uin": accountID, "loginflag": 1, "platform": "20", "filename": ["M500" + media + ".mp3"]])
+            "guid": String(UInt64.random(in: 10_000_000...99_999_999)), "songmid": [mid], "songtype": [0], "uin": accountID, "loginflag": 1, "platform": "20", "filename": ["M500" + media + ".mp3"]], clientType: 19)
         let data = (object["req_1"] as? [String: Any])?["data"] as? [String: Any] ?? [:]
         let info = (data["midurlinfo"] as? [[String: Any]])?.first ?? [:]
         let path = QQWire.string(info["purl"])

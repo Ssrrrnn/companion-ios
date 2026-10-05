@@ -2,11 +2,15 @@
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
-## Current release: 0.8.0
+## Current release: 0.8.1
 
 The home screen includes location-based Open-Meteo weather, an editable relationship start date and a sidebar for settings, notification permissions, health summaries and actual web-reading receipts. New shared little notes join the existing diaries, calendar moods and keepsakes. Proactive delivery now uses the Morrow-only backend; Telegram and QQ chat transports are disabled.
 
-The listening room plays HTTPS audio and public podcast RSS enclosures, provides Apple podcast search, publishes Now Playing metadata and remote controls, and can continue playing in the background. Saved QQ/NetEase catalog links open their respective provider. The optional listening share reports this client's actual title, progress and play/pause state to the companion; it does not synchronize a second player or expose another app's playback state.
+The listening room uses two editable avatars, an album-covered vinyl player, timed lyrics, playback modes and a shared queue. QQ Music can be connected through its official web login in an isolated WKWebView. Music-session cookies are stored only in this device's Keychain and sent directly to fixed QQ Music endpoints, never the companion backend. It reads created/collected playlists and liked songs, searches tracks and separately queries account-scoped membership. Failed, empty or mismatched membership responses remain unknown. Playback uses only the audio URL returned for the current account; it cannot confer platform membership or guarantee catalog/quality access.
+
+This is a web-session integration, not an approved QQ Music SDK/native-app OAuth integration. A QQ-account end-to-end test requires the owner to log in on the installed client. NetEase links still open externally. No Mineradio implementation code is bundled. Signed audio URLs stay transient, while only public catalog links and metadata are persisted or shared. Disconnect removes this device's QQ credentials, web data and QQ queue entries.
+
+HTTPS audio and public podcast RSS enclosures, Apple podcast discovery, Apple Now Playing metadata/album art, remote commands and background audio remain supported. Optional listening sharing reports this client's actual song, progress and play/pause state to the companion, acknowledging sharing only after a successful backend response. The two avatars do not imply a second synchronized audio player or another app's actual playback state. The listening counter measures this client's active playback time.
 
 The free AltStore build can request local notification permission and schedule an optional daily reminder. It has no APNs entitlement/provider setup, so server messages sync when the app opens. Direct HealthKit reading is disabled in this signing profile; users can deliberately share or remove manual steps/sleep summaries. Settings must not describe these as already granted health access or closed-app push.
 

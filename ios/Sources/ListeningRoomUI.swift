@@ -3,6 +3,7 @@ import SwiftUI
 struct ListeningRoomView: View {
     @EnvironmentObject private var listening: ListeningSpace
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("companion_name") private var companionName = "他"
     @State private var login = false
     @State private var library = false
@@ -106,7 +107,7 @@ struct ListeningRoomView: View {
             .task { if !ProcessInfo.processInfo.arguments.contains("--ui-preview"), listening.qq.connected, listening.qq.refreshedAt == nil { await listening.qq.refresh() } }
     }
     private var record: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !listening.playing)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !listening.playing || reduceMotion)) { context in
             ZStack {
                 Circle().fill(accent.opacity(0.08)).frame(width: 272, height: 272)
                 ZStack {
@@ -115,7 +116,7 @@ struct ListeningRoomView: View {
                     MusicCover(url: listening.current?.artwork, size: 146, icon: listening.current?.kind == "podcast" ? "mic.fill" : "music.note").clipShape(Circle())
                     Circle().fill(.black.opacity(0.85)).frame(width: 14, height: 14).overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 2))
                 }.frame(width: 248, height: 248)
-                    .rotationEffect(.degrees(listening.playing ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 20) * 18 : 0))
+                    .rotationEffect(.degrees(listening.playing && !reduceMotion ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 20) * 18 : 0))
                     .shadow(color: .black.opacity(0.18), radius: 18, y: 12)
             }.frame(maxWidth: .infinity)
         }
