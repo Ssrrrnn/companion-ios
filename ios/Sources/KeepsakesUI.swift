@@ -107,14 +107,14 @@ struct KeepsakesView: View {
 }
 
 @MainActor enum CabinetSource {
-    static func entries(model: CompanionModel, space: PersonalSpace, shared: SharedSpace) -> [CabinetEntry] {
+    static func entries(model: CompanionModel, space: PersonalSpace, shared: SharedSpace, noteMonth: String? = nil) -> [CabinetEntry] {
         var result: [CabinetEntry] = []
         for kind in [KeepsakeKind.diaries, .favorites, .memories] {
             result += model.keepsakes(kind.rawValue).map { CabinetEntry(sourceID: $0.id, kind: kind, text: $0.text, attribution: kind == .diaries ? "他的日记" : kind == .favorites ? "他收好的话" : "他记着的事情", date: $0.at.flatMap(SharedDates.instant), note: $0.note) }
         }
         result += space.moments.map { CabinetEntry(sourceID: $0.id, kind: .moments, text: QuotedText($0.text).body, attribution: $0.role == "user" ? "我说的 · 本机收藏" : "他说的 · 本机收藏", date: $0.savedAt) }
         result += space.notes.map { CabinetEntry(sourceID: $0.id.uuidString, kind: .notes, text: $0.text, attribution: "我的纸条 · 本机", date: $0.date) }
-        result += shared.entries.filter { $0.kind == "note" }.map { CabinetEntry(sourceID: $0.id, kind: .notes, text: $0.text, attribution: $0.actor == "user" ? "我的共享纸条" : "他留给我的纸条", date: SharedDates.parse($0.day)) }
+        result += shared.entries.filter { $0.kind == "note" && (noteMonth == nil || $0.day.hasPrefix(noteMonth!)) }.map { CabinetEntry(sourceID: $0.id, kind: .notes, text: $0.text, attribution: $0.actor == "user" ? "我的共享纸条" : "他留给我的纸条", date: SharedDates.parse($0.day)) }
         result += space.music.map { CabinetEntry(sourceID: $0.id, kind: .music, text: $0.share.markdown, attribution: $0.share.providerName, date: $0.savedAt) }
         return result
     }
@@ -127,7 +127,7 @@ private struct CabinetCollection: View {
     @EnvironmentObject private var shared: SharedSpace
     @State private var query = ""
     @State private var writing = false
-    private var entries: [CabinetEntry] { CabinetEntry.sorted(CabinetSource.entries(model: model, space: space, shared: shared).filter { $0.kind == kind }, pinned: space.pinned, query: query) }
+    private var entries: [CabinetEntry] { CabinetEntry.sorted(CabinetSource.entries(model: model, space: space, shared: shared, noteMonth: kind == .notes ? SharedDates.month(shared.month) : nil).filter { $0.kind == kind }, pinned: space.pinned, query: query) }
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
@@ -173,7 +173,7 @@ private struct CabinetRow: View {
                 if entry.kind != .music { Text(entry.text).font(.subheadline).lineSpacing(4).foregroundStyle(.secondary).lineLimit(3) }
                 HStack { if let date = entry.date { Text(date, format: .dateTime.year().month().day()).font(.caption2).foregroundStyle(.secondary) }; Spacer(); Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(entry.kind.color) }
             }.foregroundStyle(.primary).padding(20).glassSurface(in: RoundedRectangle(cornerRadius: 23))
-        }.buttonStyle(.plain).contextMenu { Button { space.togglePin(entry.id) } label: { Label(space.pinned.contains(entry.id) ? "取消置顶" : "置顶珍藏", systemImage: "pin") }; ShareLink(item: entry.text) { Label("分享", systemImage: "square.and.arrow.up") } }
+        }.buttonStyle(.plain).accessibilityIdentifier("keepsake-entry-" + entry.id).contextMenu { Button { space.togglePin(entry.id) } label: { Label(space.pinned.contains(entry.id) ? "取消置顶" : "置顶珍藏", systemImage: "pin") }; ShareLink(item: entry.text) { Label("分享", systemImage: "square.and.arrow.up") } }
     }
 }
 

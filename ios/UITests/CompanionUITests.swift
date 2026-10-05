@@ -220,7 +220,7 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(diaries.waitForExistence(timeout: 5))
         for _ in 0..<3 { if diaries.isHittable { break }; app.swipeUp() }
         diaries.tap()
-        let entry = app.buttons.containing(.staticText, identifier: "把今天留成一页").firstMatch
+        let entry = app.buttons["keepsake-entry-diaries:preview-diary"]
         XCTAssertTrue(entry.waitForExistence(timeout: 3))
         entry.tap()
         let pin = app.buttons["pin-keepsake"]
