@@ -12,7 +12,7 @@ struct SettingsView: View {
     @AppStorage("chat_palette") private var palette = "blue"
     @AppStorage("chat_haptics") private var haptics = true
     @AppStorage("app_appearance") private var appearance = "system"
-    @AppStorage("wallpaper_style") private var wallpaperStyle = "mist"
+    @AppStorage("wallpaper_style") private var wallpaperStyle = "linen"
     @AppStorage("wallpaper_shade") private var wallpaperShade = 0.12
     @AppStorage("wallpaper_blur") private var wallpaperBlur = 0.0
     @State private var base = UserDefaults.standard.string(forKey: "server_url") ?? ""
@@ -101,7 +101,7 @@ struct SettingsView: View {
             } header: { Text("连接现有伴侣") }
               footer: { Text("填写自己的伴侣服务地址与连接密钥。模型与语音服务密钥由服务端保存。") }
             Section("版本与更新") {
-                Text("小家 · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
+                Text("Morrow · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
                 Link("查看版本更新", destination: URL(string: "https://github.com/Ssrrrnn/companion-ios/releases")!)
                 Text("主动消息继续通过 QQ 或 Telegram 到达，打开小家可以同步查看聊天。")
                     .font(.footnote).foregroundStyle(.secondary)

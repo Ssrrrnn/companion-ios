@@ -47,6 +47,10 @@ struct CompanionApp: App {
                             Message(id: "preview:3", role: "assistant", text: "那就赖着。你今天已经做得够多了。"),
                             Message(id: "preview:4", role: "assistant", text: "我把旁边的位置留给你，什么都不用想。")
                         ]
+                        if ProcessInfo.processInfo.arguments.contains("--long-chat") {
+                            let history = (0..<1000).map { Message(id: "history:\($0)", role: $0.isMultiple(of: 2) ? "assistant" : "user", text: "第\($0)段回忆。慢慢说，我一直在。") }
+                            model.messages = history + model.messages
+                        }
                         return
                     }
                     #endif
@@ -79,7 +83,7 @@ struct CompanionApp: App {
                             await reading.sync(api: model.api, library: library)
                             await activity.sync(api: model.api)
                         }
-                        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                        do { try await Task.sleep(for: .seconds(3)) } catch { return }
                     }
                 }
         }
@@ -178,13 +182,16 @@ struct HomeView: View {
     private var todayMood: SharedEntry? { shared.on(.now).last { $0.actor == "user" && $0.kind == "mood" } }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 HStack {
-                    Text(Date.now, format: .dateTime.month().day().weekday()).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Morrow").font(MorrowType.script(43)).foregroundStyle(homeAccent)
+                        Text("A LITTLE WORLD, WITH YOU").font(.system(size: 9, weight: .medium)).tracking(2.2).foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Button { selection = 3 } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }.accessibilityLabel("小家设置")
                 }
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .top) {
                         CompanionAvatar(size: 64)
                         Spacer()
@@ -208,10 +215,10 @@ struct HomeView: View {
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
                 NavigationLink(value: CompanionRoute.activity) {
                     HStack(spacing: 16) {
-                        Image(systemName: "sparkles").font(.title2).foregroundStyle(homeAccent)
+                        Image(systemName: "pawprint").font(.title2).foregroundStyle(homeAccent)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("他的日常").font(.headline).foregroundStyle(.primary)
-                            Text("今日计划 · 醒来后的行动与随笔").font(.caption).foregroundStyle(.secondary)
+                            Text("印记").font(.system(.title3, design: .serif)).foregroundStyle(.primary)
+                            Text("他醒来后，留下的日常").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                     }.padding(18).glassSurface(in: RoundedRectangle(cornerRadius: 24))
@@ -293,22 +300,9 @@ struct HomeView: View {
     }
     private var moodEditor: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Picker("心情", selection: $moodEmoji) {
-                        ForEach(["🤍", "🥰", "😊", "🥺", "😔", "😤", "😴"], id: \.self) { Text($0).tag($0) }
-                    }.pickerStyle(.segmented)
-                    TextField("想记下一点什么？", text: $moodNote, axis: .vertical).lineLimit(3...6)
-                } header: { Text("今天的心情") } footer: { Text("保存在双方共享日历，他可以查看。不会自动发送聊天消息；离线时先保存，连接后继续同步。") }
-            }.navigationTitle("今天的心情").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { moodSheet = false } }
-                    ToolbarItem(placement: .confirmationAction) { Button("保存记录") {
-                        shared.saveMood(emoji: moodEmoji, note: moodNote, date: .now, id: moodID)
-                        moodSheet = false; Task { await shared.sync(api: model.api, force: true) }
-                    } }
-                }
-        }.presentationDetents([.medium, .large])
+            SharedCalendarView(editOnOpen: true)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { moodSheet = false } } }
+        }
     }
     private var noteEditor: some View {
         NavigationStack {

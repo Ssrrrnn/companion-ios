@@ -54,7 +54,7 @@ final class SharedSpace: ObservableObject {
     @Published private(set) var entries: [SharedEntry] = []
     @Published var month = Date.now
     @Published var error: String?
-    @Published private(set) var syncing = false
+    private(set) var syncing = false
     private var pending: [SharedEntry] = []
     private var deletions: Set<String> = []
     private var lastRefresh = Date.distantPast
@@ -121,10 +121,11 @@ final class SharedSpace: ObservableObject {
             }
             let response: SharedCollection = try await api.request("v1/shared?month=\(target)", timeout: 15)
             let localIDs = Set(pending.map(\.id))
-            entries.removeAll { $0.day.hasPrefix(target) && !localIDs.contains($0.id) }
-            entries.append(contentsOf: response.entries.filter { !localIDs.contains($0.id) && !deletions.contains($0.id) })
-            lastMonth = target; lastRefresh = .now; error = nil; persist()
-        } catch { self.error = "暂未同步；你的记录已留在手机，下次连接会继续。" }
+            var merged = entries.filter { !$0.day.hasPrefix(target) || localIDs.contains($0.id) }
+            merged.append(contentsOf: response.entries.filter { !localIDs.contains($0.id) && !deletions.contains($0.id) })
+            if merged != entries { entries = merged; persist() }
+            lastMonth = target; lastRefresh = .now; if error != nil { error = nil }
+        } catch { if self.error != "暂未同步；你的记录已留在手机，下次连接会继续。" { self.error = "暂未同步；你的记录已留在手机，下次连接会继续。" } }
     }
     #if DEBUG
     func preview() {
@@ -137,123 +138,208 @@ final class SharedSpace: ObservableObject {
 }
 
 struct SharedCalendarView: View {
+    var editOnOpen = false
     @EnvironmentObject private var shared: SharedSpace
     @EnvironmentObject private var model: CompanionModel
     @AppStorage("companion_name") private var name = "他"
+    @AppStorage("user_name") private var userName = "我"
     @State private var selected = Date.now
-    @State private var editing = false
+    @State private var sheet: MoodSheet?
     @State private var editID: String?
-    @State private var emoji = "🤍"
+    @State private var emoji = "😊"
     @State private var note = ""
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
+    @State private var section = 0
+    @State private var confirmDelete = false
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
     private var records: [SharedEntry] { shared.on(selected) }
+    private var monthly: [SharedEntry] { shared.entries.filter { $0.day.hasPrefix(SharedDates.month(shared.month)) } }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("我们各自的一天").font(.system(.title2, design: .serif))
-                        Text("心情、小记、日程，都在同一张日历里。").font(.caption).foregroundStyle(.secondary)
-                    }
+            LazyVStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 10) {
+                    CompanionAvatar(size: 32)
+                    Text("Our days").font(MorrowType.script(30))
                     Spacer()
-                    Button { editID = nil; emoji = "🤍"; note = ""; editing = true } label: {
-                        Image(systemName: "plus").frame(width: 42, height: 42).glassSurface(in: Circle())
-                    }.accessibilityLabel("记录我的心情")
+                    Text(userName + " & " + name).font(MorrowType.editorial(15)).foregroundStyle(.secondary).lineLimit(1)
                 }
-                VStack(spacing: 15) {
-                    HStack {
-                        Button { changeMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 34, height: 34) }.accessibilityLabel("上个月")
-                        Spacer()
-                        Text(shared.month, format: .dateTime.year().month()).font(.headline)
-                        Spacer()
-                        Button { changeMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 34, height: 34) }.accessibilityLabel("下个月")
-                    }
-                    HStack { ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity) } }
-                    LazyVGrid(columns: columns, spacing: 6) {
-                        ForEach(Array(SharedDates.cells(shared.month).enumerated()), id: \.offset) { _, date in
-                            if let date { cell(date) } else { Color.clear.frame(height: 58) }
-                        }
-                    }
-                    HStack(spacing: 18) { legend("我", color: .pink); legend(name, color: .blue); Spacer(); Button("今天") { selected = .now; shared.month = .now }.font(.caption) }
-                }.padding(16).glassSurface(in: RoundedRectangle(cornerRadius: 26))
-                HStack {
+                Picker("日历内容", selection: $section) {
+                    Text("心情").tag(0); Text("日程与小记").tag(1)
+                }.pickerStyle(.segmented)
+                calendarCard
+                HStack(spacing: 7) {
+                    MoodBadge(emoji: nil, user: true, size: 12); Text(userName)
+                    MoodBadge(emoji: nil, user: false, size: 12); Text(name)
+                    Spacer(); Text("点日期查看详情")
+                }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 13).padding(.vertical, 11)
+                    .glassSurface(in: Capsule())
+                Button { selected = .now; shared.month = .now; beginEditing() } label: {
+                    Text("记录今日心情").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 15)
+                        .foregroundStyle(.white).background(moodInk, in: Capsule())
+                }.buttonStyle(.plain).accessibilityLabel("记录我的心情")
+                if section == 0 {
+                    MoodStatistics(title: userName + " 的心情", user: true, entries: monthly)
+                    MoodStatistics(title: name + " 的心情", user: false, entries: monthly)
+                } else {
                     Text(selected, format: .dateTime.month().day().weekday()).font(.headline)
-                    Spacer(); Text("\(records.count) 条记录").font(.caption).foregroundStyle(.secondary)
+                    let notes = records.filter { $0.kind != "mood" }
+                    if notes.isEmpty { Text("这一天还没有日程或小记。").font(.subheadline).foregroundStyle(.secondary) }
+                    ForEach(notes) { entry in entryCard(entry) }
                 }
-                if records.isEmpty {
-                    Text("这一天还空着。你可以记自己的心情，他也可以留下他的。").font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 12)
-                }
-                ForEach(records) { entry in entryCard(entry) }
                 if let error = shared.error { Text(error).font(.caption).foregroundStyle(.secondary) }
-                Text("保存记录会同步到两人的共享日历，供他读取，不会自动发成聊天消息。手机日程由授权的设备执行；待执行与失败会如实标注。")
-                    .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
-            }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
+                Text("各自记录，各自的心情。保存后彼此可见，不会自动发送聊天消息。")
+                    .font(.caption).foregroundStyle(.secondary).lineSpacing(4).padding(.bottom, 20)
+            }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
         }.background { GlassWallpaper() }.navigationTitle("我们的日历").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
             .task(id: SharedDates.month(shared.month)) { if model.connected { await shared.sync(api: model.api, force: true) } }
             .refreshable { await shared.sync(api: model.api, force: true) }
-            .sheet(isPresented: $editing) { editor }
+            .onAppear {
+                if editOnOpen && sheet == nil { beginEditing() }
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--mood-editor") { beginEditing() }
+                #endif
+            }
+            .sheet(item: $sheet) { value in
+                if value == .editor { editor } else { details }
+            }
+    }
+    private var calendarCard: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Button { changeMonth(-1) } label: { Image(systemName: "chevron.left").font(.caption).frame(width: 36, height: 36).overlay(Circle().stroke(Color.secondary.opacity(0.25))) }.accessibilityLabel("上个月")
+                Spacer()
+                VStack(spacing: 1) {
+                    Text(String(SharedDates.calendar.component(.year, from: shared.month))).font(.caption).foregroundStyle(.secondary)
+                    Text(shared.month, format: .dateTime.month(.wide)).font(.system(.title2, design: .serif))
+                }
+                Spacer()
+                Button { changeMonth(1) } label: { Image(systemName: "chevron.right").font(.caption).frame(width: 36, height: 36).overlay(Circle().stroke(Color.secondary.opacity(0.25))) }.accessibilityLabel("下个月")
+            }.padding(.bottom, 6)
+            HStack { ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity) } }
+            LazyVGrid(columns: columns, spacing: 5) {
+                ForEach(Array(SharedDates.cells(shared.month).enumerated()), id: \.offset) { _, date in
+                    if let date { cell(date) } else { Color.clear.frame(height: 57) }
+                }
+            }
+            Button("回到今天") { selected = .now; shared.month = .now }.font(.caption).foregroundStyle(.secondary)
+        }.padding(15).glassSurface(in: RoundedRectangle(cornerRadius: 28))
+    }
+    private func cell(_ date: Date) -> some View {
+        let entries = shared.on(date)
+        let current = SharedDates.key(date) == SharedDates.key(selected)
+        let mine = entries.last { $0.actor == "user" && $0.kind == "mood" }
+        let his = entries.last { $0.actor == "assistant" && $0.kind == "mood" }
+        return Button { selected = date; sheet = .details } label: {
+            VStack(spacing: 3) {
+                Text("\(SharedDates.calendar.component(.day, from: date))").font(.system(size: 11, weight: current ? .semibold : .regular, design: .serif))
+                    .frame(width: 22, height: 22).background(current ? moodInk : .clear, in: Circle()).foregroundStyle(current ? Color.white : Color.primary)
+                if section == 0 {
+                    HStack(spacing: 3) {
+                        MoodBadge(emoji: mine?.emoji, user: true, size: 14)
+                        MoodBadge(emoji: his?.emoji, user: false, size: 14)
+                    }
+                } else {
+                    HStack(spacing: 3) {
+                        if entries.contains(where: { $0.kind == "event" }) { Image(systemName: "calendar").font(.system(size: 11)) }
+                        if entries.contains(where: { $0.kind == "note" }) { Image(systemName: "note.text").font(.system(size: 11)) }
+                    }.frame(height: 14)
+                }
+            }.frame(maxWidth: .infinity, minHeight: 57)
+                .background(current ? moodInk.opacity(0.045) : .clear, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(current ? moodInk.opacity(0.65) : .clear, lineWidth: 1))
+        }.buttonStyle(.plain).accessibilityLabel("\(SharedDates.key(date))，\(entries.count) 条记录")
+            .accessibilityIdentifier(current ? "mood-selected-day" : "mood-day-" + SharedDates.key(date))
     }
     private func changeMonth(_ direction: Int) {
         shared.month = SharedDates.calendar.date(byAdding: .month, value: direction, to: shared.month)!
         selected = shared.month
     }
-    private func legend(_ title: String, color: Color) -> some View { HStack(spacing: 5) { Circle().fill(color).frame(width: 5, height: 5); Text(title).font(.caption2).foregroundStyle(.secondary) } }
-    private func cell(_ date: Date) -> some View {
-        let entries = shared.on(date)
-        let current = SharedDates.key(date) == SharedDates.key(selected)
-        return Button { selected = date } label: {
-            VStack(spacing: 5) {
-                Text("\(SharedDates.calendar.component(.day, from: date))").font(.subheadline.weight(current ? .semibold : .regular))
-                HStack(spacing: 4) {
-                    if entries.contains(where: { $0.actor == "user" }) { Circle().fill(.pink).frame(width: 5, height: 5) }
-                    if entries.contains(where: { $0.actor == "assistant" }) { Circle().fill(.blue).frame(width: 5, height: 5) }
-                    if entries.contains(where: { $0.kind == "event" }) { Image(systemName: "calendar").font(.system(size: 8)) }
-                }.frame(height: 9)
-            }.frame(maxWidth: .infinity, minHeight: 58).foregroundStyle(.primary)
-                .background(current ? homeAccent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 13))
-        }.buttonStyle(.plain).accessibilityLabel("\(SharedDates.key(date))，\(entries.count) 条记录")
+    private func beginEditing() {
+        let existing = records.last { $0.actor == "user" && $0.kind == "mood" }
+        editID = existing?.id; emoji = existing?.emoji ?? "😊"; note = existing?.text ?? ""; sheet = .editor
+    }
+    private var details: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 17) {
+                    Text(selected, format: .dateTime.year().month().day()).font(MorrowType.editorial(27))
+                    Text("两个人的一天").font(.caption).foregroundStyle(.secondary)
+                    if records.isEmpty { Text("这一天还没有记录。").foregroundStyle(.secondary).padding(.vertical, 20) }
+                    ForEach(records) { entry in entryCard(entry) }
+                    HStack {
+                        Button("记录我的心情") { beginEditing() }.buttonStyle(.borderedProminent).tint(moodInk)
+                        if records.contains(where: { $0.actor == "user" && $0.kind == "mood" }) {
+                            Button("删除我的心情", role: .destructive) { confirmDelete = true }.buttonStyle(.bordered)
+                        }
+                    }
+                }.padding(24)
+            }.background { GlassWallpaper() }.navigationTitle("当天心情").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { sheet = nil } } }
+                .confirmationDialog("删除这一天我的心情记录？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                    Button("删除我的心情", role: .destructive) {
+                        for entry in records where entry.actor == "user" && entry.kind == "mood" { shared.delete(entry) }
+                        Task { await shared.sync(api: model.api, force: true) }
+                    }
+                }
+        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
     }
     private func entryCard(_ entry: SharedEntry) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(entry.emoji.isEmpty ? entry.kind == "event" ? "🗓" : "📝" : entry.emoji).font(.title2)
-                Text(entry.actor == "user" ? "我" : name).font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(entry.kind == "event" ? "日程" : entry.kind == "mood" ? "心情" : "小记").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                MoodBadge(emoji: entry.emoji.isEmpty ? nil : entry.emoji, user: entry.actor == "user", size: 30)
+                Text((entry.actor == "user" ? userName : name) + " · " + (entry.kind == "mood" ? MoodStyle.label(entry.emoji) : entry.kind == "event" ? "日程" : "小记"))
+                    .font(.subheadline.weight(.semibold))
             }
             if !entry.title.isEmpty { Text(entry.title).font(.headline) }
-            if !entry.text.isEmpty { Text(entry.text).font(.subheadline).lineSpacing(4).textSelection(.enabled) }
+            if !entry.text.isEmpty { Text(entry.text).font(.subheadline).lineSpacing(5).textSelection(.enabled) }
             if let start = entry.start.flatMap(SharedDates.instant) { Text(start, format: .dateTime.hour().minute()).font(.caption).foregroundStyle(.secondary) }
             if entry.status == "queued" { Label("待手机执行", systemImage: "clock").font(.caption).foregroundStyle(.secondary) }
             if entry.status == "failed" { Label("手机日历未写入", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.red) }
             if entry.status == "done" { Label("已写入手机日历", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary) }
             if entry.status == "pending_sync" { Text("已保存在手机，等待同步").font(.caption).foregroundStyle(.secondary) }
-        }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassSurface(in: RoundedRectangle(cornerRadius: 24), tint: entry.actor == "user" ? .pink : .blue)
+        }.padding(17).frame(maxWidth: .infinity, alignment: .leading).glassSurface(in: RoundedRectangle(cornerRadius: 22))
             .contextMenu {
                 if entry.actor == "user" {
-                    if entry.kind == "mood" {
-                        Button("编辑这条记录") { editID = entry.id; emoji = entry.emoji; note = entry.text; selected = SharedDates.parse(entry.day) ?? selected; editing = true }
-                    }
+                    if entry.kind == "mood" { Button("编辑这条记录") { editID = entry.id; emoji = entry.emoji; note = entry.text; selected = SharedDates.parse(entry.day) ?? selected; sheet = .editor } }
                     Button("删除", role: .destructive) { shared.delete(entry) }
                 }
             }
     }
     private var editor: some View {
         NavigationStack {
-            Form {
-                Section {
-                    DatePicker("这一天", selection: $selected, displayedComponents: .date)
-                    Picker("心情", selection: $emoji) { ForEach(["🤍", "🥰", "😊", "🥺", "😔", "😤", "😴"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
-                    TextField("只记录，也可以不用说出来", text: $note, axis: .vertical).lineLimit(3...8)
-                } footer: { Text("这是你的记录。保存后会出现在双方共享日历里，他能读取；不会自动发送一条聊天消息，也不会替你判断心情。") }
-            }.navigationTitle("记下我的一天").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { editing = false } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("保存记录") { shared.saveMood(emoji: emoji, note: note, date: selected, id: editID); editing = false; Task { await shared.sync(api: model.api, force: true) } }
-                            .accessibilityIdentifier("save-shared-mood")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("How do you feel?").font(MorrowType.script(34)).foregroundStyle(homeAccent)
+                    DatePicker("这一天", selection: $selected, in: ...Date.now, displayedComponents: .date)
+                    HStack { CompanionAvatar(size: 28, user: true); Text(userName).font(.headline); Spacer(); Text("记录自己的心情").font(.caption).foregroundStyle(.secondary) }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 4), spacing: 10) {
+                        ForEach(MoodStyle.choices, id: \.emoji) { mood in
+                            Button { emoji = mood.emoji } label: {
+                                VStack(spacing: 7) {
+                                    MoodBadge(emoji: mood.emoji, user: true, size: 33)
+                                    Text(mood.title).font(.caption2).foregroundStyle(.primary)
+                                }.frame(maxWidth: .infinity).padding(.vertical, 11)
+                                    .background(emoji == mood.emoji ? moodInk.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 15))
+                                    .overlay(RoundedRectangle(cornerRadius: 15).stroke(emoji == mood.emoji ? moodInk : .clear, lineWidth: 1.5))
+                            }.buttonStyle(.plain).accessibilityLabel(mood.title).accessibilityAddTraits(emoji == mood.emoji ? .isSelected : [])
+                        }
                     }
-                }
-        }.presentationDetents([.medium, .large])
+                    TextField("只记录，也可以不用说出来", text: $note, axis: .vertical).lineLimit(3...6)
+                        .padding(16).glassSurface(in: RoundedRectangle(cornerRadius: 18))
+                    Button {
+                        let existing = records.last { $0.actor == "user" && $0.kind == "mood" }
+                        let sameDayID = editID.flatMap { id in shared.entries.first(where: { $0.id == id && $0.day == SharedDates.key(selected) })?.id }
+                        shared.saveMood(emoji: emoji, note: note, date: selected, id: sameDayID ?? existing?.id)
+                        shared.month = selected; sheet = .details
+                        Task { await shared.sync(api: model.api, force: true) }
+                    } label: {
+                        Text("保存心情").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(15).foregroundStyle(.white).background(moodInk, in: Capsule())
+                    }.buttonStyle(.plain).accessibilityIdentifier("save-shared-mood")
+                    Text("他的心情由他自己记录；你的记录会同步给他查看，不会发成聊天消息。").font(.caption).foregroundStyle(.secondary)
+                }.padding(24)
+            }.background { GlassWallpaper() }.navigationTitle("记录心情").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { sheet = nil } } }
+        }.presentationDetents([.large]).presentationDragIndicator(.visible)
     }
 }
+private enum MoodSheet: String, Identifiable { case details, editor; var id: String { rawValue } }

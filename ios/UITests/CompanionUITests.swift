@@ -8,7 +8,8 @@ final class CompanionUITests: XCTestCase {
         let activity = app.buttons["home-activity"]
         XCTAssertTrue(activity.waitForExistence(timeout: 5)); activity.tap()
         XCTAssertTrue(app.staticTexts["今天想做的事"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["继续读一页书"].exists)
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "今天想做的事")).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["继续读一页书"].waitForExistence(timeout: 5))
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["已完成"].waitForExistence(timeout: 5))
     }
@@ -28,24 +29,41 @@ final class CompanionUITests: XCTestCase {
         let add = app.buttons["记录我的心情"]
         XCTAssertTrue(add.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["我们的日历"].firstMatch.exists)
+        app.buttons["mood-selected-day"].tap()
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["今天想慢一点，把心情留在这里。"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["翻到一页喜欢的话"].exists)
-        app.swipeDown()
+        app.buttons["关闭"].tap()
         add.tap()
         let field = app.textFields["只记录，也可以不用说出来"]
-        // Vertical TextField becomes a UITextView on iOS.
         let input = field.exists ? field : app.textViews.firstMatch
-        XCTAssertTrue(input.waitForExistence(timeout: 5)); input.tap(); input.typeText("My calendar record")
-        app.buttons["save-shared-mood"].tap()
+        XCTAssertTrue(input.waitForExistence(timeout: 5)); input.tap()
+        if let value = input.value as? String, !value.isEmpty { input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count)) }
+        input.typeText("My calendar record")
         app.swipeUp()
+        app.buttons["save-shared-mood"].tap()
         XCTAssertTrue(app.staticTexts["My calendar record"].waitForExistence(timeout: 5))
+        app.buttons["关闭"].tap()
         app.navigationBars.buttons.firstMatch.tap()
         app.buttons["聊天"].tap()
         let composer = app.textViews["chat-composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         XCTAssertEqual(composer.value as? String, "")
         XCTAssertFalse(app.staticTexts["My calendar record"].exists)
+    }
+    func testLongHistoryHomeChatNavigationPerformance() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-preview", "--home", "--long-chat", "--reset-draft"]
+        app.launch()
+        XCTAssertTrue(app.buttons["聊天"].waitForExistence(timeout: 15))
+        let options = XCTMeasureOptions(); options.iterationCount = 3
+        measure(metrics: [XCTClockMetric()], options: options) {
+            app.buttons["聊天"].tap()
+            XCTAssertTrue(app.textViews["chat-composer"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["我把旁边的位置留给你，什么都不用想。"].exists)
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(app.buttons["聊天"].waitForExistence(timeout: 5))
+        }
     }
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()

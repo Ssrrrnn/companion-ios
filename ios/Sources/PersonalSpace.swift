@@ -132,7 +132,7 @@ struct CompanionAvatar: View {
             if let image = user ? space.userAvatar : space.avatar { Image(uiImage: image).resizable().scaledToFill() }
             else {
                 ZStack {
-                    Circle().fill(.ultraThinMaterial)
+                    Circle().fill(homeAccent.opacity(0.06))
                         .overlay(Circle().fill(homeAccent.opacity(0.16)))
                     Text(String(displayName.prefix(1))).font(.system(size: size * 0.43, weight: .medium, design: .serif)).foregroundStyle(Color.primary)
                 }

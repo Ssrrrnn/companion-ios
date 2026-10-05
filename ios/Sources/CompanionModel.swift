@@ -28,7 +28,7 @@ final class CompanionModel: ObservableObject {
     }
     @Published var playbackPaused = false
     @Published private(set) var voiceDurations: [String: Double] = [:]
-    @Published var refreshing = false
+    private var refreshing = false
     private var conversationGeneration = 0
     private var player: AVAudioPlayer?
     private var playbackTask: Task<Void, Never>?
@@ -37,9 +37,7 @@ final class CompanionModel: ObservableObject {
     private var voiceFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Voices", isDirectory: true)
     }
-    var api: CompanionAPI {
-        CompanionAPI(base: UserDefaults.standard.string(forKey: "server_url") ?? "", token: ConnectionKey.read())
-    }
+    private(set) var api = CompanionAPI(base: UserDefaults.standard.string(forKey: "server_url") ?? "", token: ConnectionKey.read())
     #if DEBUG
     var isPreview = false
     #endif
@@ -62,9 +60,9 @@ final class CompanionModel: ObservableObject {
             // A send can start while this GET is in flight. Do not overwrite its reply.
             guard generation == conversationGeneration, !sending, pending == nil else { return }
             if messages != result.messages { messages = result.messages }
-            connected = true
+            if !connected { connected = true }
         } catch is CancellationError { }
-        catch { if generation == conversationGeneration { connected = false } }
+        catch { if generation == conversationGeneration && connected { connected = false } }
     }
     func connect(base: String, token: String) async -> Bool {
         do {
@@ -73,9 +71,10 @@ final class CompanionModel: ObservableObject {
             let result: History = try await connection.request("v1/history")
             try ConnectionKey.save(connection.token)
             UserDefaults.standard.set(connection.base, forKey: "server_url")
+            api = connection
             conversationGeneration += 1
             messages = result.messages
-            connected = true
+            if !connected { connected = true }
             error = nil
             return true
         } catch { self.error = error.localizedDescription; return false }
@@ -114,7 +113,7 @@ final class CompanionModel: ObservableObject {
             }
             pending = nil
             UserDefaults.standard.removeObject(forKey: pendingKey)
-            connected = true
+            if !connected { connected = true }
         } catch { self.error = error.localizedDescription }
         sending = false
         // The response above is already visible; do not immediately replace it with an older history snapshot.

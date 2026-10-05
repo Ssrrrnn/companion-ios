@@ -40,6 +40,7 @@ struct ChatView: View {
     @State private var nearBottom = true
     @State private var unseen = false
     @State private var width: CGFloat = 390
+    @State private var visibleCount = 100
     private var palette: ChatPalette { ChatPalette(rawValue: paletteName) ?? .blue }
     private var composed: String { QuotedText.compose(draft, replyingTo: replyingTo, name: name) }
     private var canSend: Bool {
@@ -60,7 +61,11 @@ struct ChatView: View {
                             if !model.connected { Button("去设置") { selection = 3 }.buttonStyle(.bordered) }
                         }.padding(.vertical, 50).frame(maxWidth: .infinity)
                     }
-                    ForEach(model.chatRows) { row in
+                    if model.chatRows.count > visibleCount {
+                        Button("查看更早的聊天") { visibleCount += 100 }
+                            .font(.caption).padding(.vertical, 16).accessibilityIdentifier("load-earlier-chat")
+                    }
+                    ForEach(model.chatRows.suffix(visibleCount)) { row in
                         let piece = row.piece
                         bubble(piece.message, voiceID: piece.index == 0 ? piece.source.id : nil, showAvatar: row.startsGroup)
                             .padding(.top, row.startsGroup ? 14 : 7).id(piece.anchor)
@@ -269,6 +274,9 @@ struct ChatView: View {
                     if results.isEmpty { ContentUnavailableView.search(text: query) }
                     ForEach(results) { message in
                         Button {
+                            if let index = model.chatRows.firstIndex(where: { $0.piece.source.id == message.id }) {
+                                visibleCount = max(visibleCount, model.chatRows.count - index)
+                            }
                             scrollTarget = nil; searching = false
                             Task { try? await Task.sleep(for: .milliseconds(250)); scrollTarget = message.id }
                         } label: {

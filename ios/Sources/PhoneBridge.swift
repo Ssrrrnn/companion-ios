@@ -133,7 +133,7 @@ final class PhoneBridge: ObservableObject {
             await reloadCalendars()
             if !granted { error = "日历权限未获准，可以在系统设置中修改。" }
             else { error = nil }
-        } catch { self.error = "系统没有授予日历访问权限。" }
+        } catch { if self.error != "系统没有授予日历访问权限。" { self.error = "系统没有授予日历访问权限。" } }
     }
     func tick(api: CompanionAPI, device: DeviceContext, location: LocationContext) async {
         guard !busy else { return }
@@ -190,8 +190,8 @@ final class PhoneBridge: ObservableObject {
                 }
                 let _: PhoneReceiptResponse = try await api.request("v1/phone/actions/\(action.id)/receipt", body: JSONEncoder().encode(receipt), timeout: 15)
             }
-            error = nil
-        } catch { self.error = "手机能力暂未同步，请检查小家连接。" }
+            if error != nil { error = nil }
+        } catch { if self.error != "手机能力暂未同步，请检查小家连接。" { self.error = "手机能力暂未同步，请检查小家连接。" } }
     }
     func batterySettingChanged() { lastSnapshot = .distantPast }
 }

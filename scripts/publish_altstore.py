@@ -68,6 +68,10 @@ def update_source(source, version, permissions):
     if len(apps) != 1:
         raise ValueError('Source must contain exactly one matching app')
     app = apps[0]
+    source["name"] = "Morrow · 更新源"
+    source["subtitle"] = "A little world, with you"
+    app["name"] = "Morrow"
+    app["subtitle"] = "把日常，留在彼此身边。"
     old = app['versions']
     app['versions'] = [version] + [v for v in old if (v['version'], v.get('buildVersion')) != (version['version'], version['buildVersion'])][:19]
     # Permissions must also cover older versions still listed in this source.
@@ -113,7 +117,7 @@ def main():
         file.write(notes + '\n')
         file.flush()
         run('gh', 'release', 'create', tag, str(ipa), '--repo', REPO,
-            '--target', build_sha, '--title', f"小家 {version['version']} ({version['buildVersion']})",
+            '--target', build_sha, '--title', f"Morrow {version['version']} ({version['buildVersion']})",
             '--notes-file', file.name)
     release = json.loads(run('gh', 'api', f'repos/{REPO}/releases/tags/{tag}'))
     assets = [a for a in release['assets'] if a['name'] == ipa.name and a['state'] == 'uploaded']
