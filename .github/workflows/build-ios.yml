@@ -53,7 +53,8 @@ jobs:
           retention-days: 7
   publish:
     needs: [build, preview]
-    runs-on: ubuntu-latest
+    # Use the same available runner family as the validated native jobs.
+    runs-on: macos-15
     timeout-minutes: 10
     permissions:
       contents: write

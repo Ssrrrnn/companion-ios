@@ -20,6 +20,7 @@ struct CompanionApp: App {
     @StateObject private var notifications = MorrowNotifications()
     @StateObject private var weather = WeatherSpace()
     @StateObject private var listening = ListeningSpace()
+    @StateObject private var radio = RadioSpace()
     @StateObject private var health = HealthSpace()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app_appearance") private var appearance = "system"
@@ -29,10 +30,11 @@ struct CompanionApp: App {
                 .environmentObject(library).environmentObject(device)
                 .environmentObject(shared).environmentObject(phone)
                 .environmentObject(reading).environmentObject(activity).environmentObject(location)
-                .environmentObject(notifications).environmentObject(weather).environmentObject(listening).environmentObject(health)
+                .environmentObject(notifications).environmentObject(weather).environmentObject(listening).environmentObject(health).environmentObject(radio)
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environment(\.calendar, SharedDates.calendar)
                 .environment(\.timeZone, SharedDates.calendar.timeZone)
+                .onChange(of: model.api) { _, api in radio.attach(listening, api: api) }
                 .onReceive(NotificationCenter.default.publisher(for: .morrowStopVoice)) { _ in model.stopAudio() }
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
@@ -48,6 +50,7 @@ struct CompanionApp: App {
                         if ProcessInfo.processInfo.arguments.contains("--queue-preview") {
                             for index in 1...12 { listening.add(ListeningTrack(id: "preview-queue-\(index)", title: "第\(index)首预览歌曲", url: "https://y.qq.com/n/ryqq/songDetail/PreviewQueue\(index)", kind: "music", artist: "预览歌手", qqMID: "PreviewQueue\(index)")) }
                         }
+                        if ProcessInfo.processInfo.arguments.contains("--radio") { radio.preview() }
                         shared.preview()
                         reading.preview(library); activity.preview(); weather.preview()
                         model.connected = true
@@ -152,26 +155,21 @@ struct CompanionTabs: View {
                 case .listening: ListeningRoomView()
                 case .browsing: BrowsingLogView()
                 case .podcasts: PodcastDiscoveryView()
+                case .radio: RadioView()
                 }
             }
         }
-        .overlay(alignment: .leading) {
+        .overlay(alignment: .trailing) {
             if drawer {
-                ZStack(alignment: .leading) {
-                    Color.black.opacity(0.22).ignoresSafeArea().onTapGesture { withAnimation { drawer = false } }
-                    VStack(alignment: .leading, spacing: 26) {
-                        HStack { Text("Morrow").font(MorrowType.script(38)); Spacer(); Button { withAnimation { drawer = false } } label: { Image(systemName: "xmark") }.accessibilityLabel("关闭侧边栏") }
-                        Text("我们的小世界").font(.caption).foregroundStyle(.secondary)
-                        drawerItem("一起听", icon: "music.note", route: .listening)
-                        drawerItem("网上散步", icon: "globe", route: .browsing)
-                        drawerItem("通知与健康", icon: "bell.badge", route: .permissions)
-                        drawerItem("手机权限", icon: "iphone", route: .device)
-                        Divider()
-                        drawerItem("设置", icon: "slider.horizontal.3", route: .settings)
-                        Spacer()
-                        Text("把日常，留在这里。").font(.system(.subheadline, design: .serif)).foregroundStyle(.secondary)
-                    }.padding(28).frame(width: 290).frame(maxHeight: .infinity).background(homePaper).transition(.move(edge: .leading))
-                }.accessibilityIdentifier("home-sidebar")
+                GeometryReader { geometry in
+                    ZStack(alignment: .trailing) {
+                        Color.black.opacity(0.42).ignoresSafeArea().onTapGesture { closeDrawer() }
+                        HomeSidebar(close: closeDrawer, open: { route in closeDrawer(); path = [route] })
+                            .frame(width: min(360, geometry.size.width * 0.88))
+                            .shadow(color: .black.opacity(0.2), radius: 24, x: -8)
+                            .transition(.move(edge: .trailing))
+                    }
+                }.transition(.opacity)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .morrowOpenChat)) { _ in path = [.chat] }
@@ -179,7 +177,10 @@ struct CompanionTabs: View {
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
-                if ProcessInfo.processInfo.arguments.contains("--activity") && path.isEmpty { path = [.activity] }
+                if ProcessInfo.processInfo.arguments.contains("--sidebar") { drawer = true }
+                else if ProcessInfo.processInfo.arguments.contains("--settings") { path = [.settings] }
+                else if ProcessInfo.processInfo.arguments.contains("--radio") { path = [.radio] }
+                else if ProcessInfo.processInfo.arguments.contains("--activity") && path.isEmpty { path = [.activity] }
                 else if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
                 else if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
                 else if ProcessInfo.processInfo.arguments.contains("--listening") { path = [.listening] }
@@ -189,9 +190,7 @@ struct CompanionTabs: View {
             #endif
         }
     }
-    private func drawerItem(_ title: String, icon: String, route: CompanionRoute) -> some View {
-        Button { drawer = false; path = [route] } label: { Label(title, systemImage: icon).font(.body).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
-    }
+    private func closeDrawer() { withAnimation(.easeOut(duration: 0.22)) { drawer = false } }
     private var dock: some View {
         HStack(spacing: 3) {
             dockItem("小家", icon: "house", tag: 0)
@@ -213,7 +212,7 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing, podcasts }
+enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing, podcasts, radio }
 
 struct HomeView: View {
     @EnvironmentObject private var activity: ActivitySpace
@@ -274,6 +273,7 @@ struct HomeView: View {
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
                 WeatherCard()
                 ListeningHomeCard()
+                RadioHomeCard()
                 NavigationLink(value: CompanionRoute.activity) {
                     HStack(spacing: 16) {
                         Image(systemName: "pawprint").font(.title2).foregroundStyle(homeAccent)
@@ -351,7 +351,9 @@ struct HomeView: View {
                         .glassSurface(in: RoundedRectangle(cornerRadius: 22))
                 }
             }.padding(22).frame(maxWidth: 720).frame(maxWidth: .infinity)
-        }.background { GlassWallpaper() }.navigationTitle("小家").toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
+        }.simultaneousGesture(DragGesture(minimumDistance: 24).onEnded { value in
+            if HomeSwipe.opens(x: value.translation.width, y: value.translation.height) { onMenu() }
+        }).accessibilityIdentifier("home-scroll").background { GlassWallpaper() }.navigationTitle("小家").toolbar(.hidden, for: .navigationBar).toolbar(.visible, for: .tabBar)
             .sheet(isPresented: $moodSheet) { moodEditor }
             .sheet(isPresented: $noteSheet) { noteEditor }
             .sheet(isPresented: $timeline) { moodTimeline }

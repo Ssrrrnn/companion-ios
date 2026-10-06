@@ -2,7 +2,7 @@
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
-## Current release: 0.9.1
+## Current release: 0.10.0
 
 The player now has visible song-search and queue-management buttons. Search reads public QQ catalog results, supports paging where the full search endpoint is available, and falls back to genuine quick-search results if needed. A QQ account is still required for QQ playback. Tap a song row to play; the queue supports swipe removal, selection, select-all, batch removal and confirmed clearing. These operations affect only Morrow's local playback queue.
 

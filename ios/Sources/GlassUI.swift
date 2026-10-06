@@ -10,7 +10,7 @@ struct GlassSurface<S: Shape>: ViewModifier {
     func body(content: Content) -> some View {
         content.background {
             shape.fill(reduceTransparency ? Color(uiColor: .secondarySystemGroupedBackground) :
-                (scheme == .dark ? Color.white.opacity(0.065) : Color.white.opacity(0.48)))
+                (scheme == .dark ? Color(uiColor: .secondarySystemGroupedBackground).opacity(0.96) : Color.white.opacity(0.64)))
             shape.fill(tint.opacity(scheme == .dark ? 0.12 : 0.055))
         }.overlay {
             shape.strokeBorderFallback(LinearGradient(colors: [Color.white.opacity(scheme == .dark ? 0.17 : 0.9),
@@ -65,7 +65,7 @@ struct GlassWallpaper: View {
                         ? [Color(red: 0.13, green: 0.12, blue: 0.11), Color(red: 0.19, green: 0.17, blue: 0.16)]
                         : style.accents, startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
-                (scheme == .dark ? Color.black : Color.white).opacity(space.wallpaper == nil ? (scheme == .dark ? 0.08 : 0.12) : shade)
+                (scheme == .dark ? Color.black : Color.white).opacity(space.wallpaper == nil ? (scheme == .dark ? 0.08 : 0.12) : max(shade, scheme == .dark ? 0.72 : 0.25))
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
     }

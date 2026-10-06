@@ -74,6 +74,10 @@ final class ListeningSpace: ObservableObject {
     private(set) var queueGeneration = UUID()
     private var playlistTask: Task<Void, Never>?
     private var activePlaylistID: String?
+    var radioFinished: (() -> Void)?
+    var radioNext: (() -> Void)?
+    var radioPrevious: (() -> Void)?
+    var radioToggle: (() -> Void)?
     private let player = AVPlayer()
     private var observer: Any?
     private var statusObserver: NSKeyValueObservation?
@@ -111,6 +115,7 @@ final class ListeningSpace: ObservableObject {
         endListener = NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime).sink { [weak self] note in
             Task { @MainActor in
                 guard let self, let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
+                if self.current?.kind == "radio" { self.radioFinished?(); return }
                 if self.mode == 1 { self.seek(0); self.resume() } else { self.next() }
             }
         }
@@ -195,6 +200,7 @@ final class ListeningSpace: ObservableObject {
     }
     private func persist() { if let data = try? JSONEncoder().encode(queue) { defaults.set(data, forKey: "listening_queue") } }
     func play(_ track: ListeningTrack) {
+        NotificationCenter.default.post(name: .morrowStopRadio, object: nil)
         let normalized = ListeningQueue.normalized(track)
         guard add(normalized), let track = queue.first(where: { ListeningQueue.key($0) == ListeningQueue.key(normalized) }) else { return }
         selectedTrackID = track.id
@@ -228,6 +234,18 @@ final class ListeningSpace: ObservableObject {
         }
         start(track, url: url)
     }
+    func playRadio(title: String, programID: UUID, part: Int, url: URL) {
+        guard url.isFileURL else { return }
+        playRequest = UUID(); resolving = false; resolvingTrackID = nil; selectedTrackID = nil
+        let track = ListeningTrack(id: "radio-\(programID)-\(part)", title: title, url: "", kind: "radio", artist: "Morrow · 他的电台")
+        start(track, url: url)
+    }
+    func stopRadio() {
+        guard current?.kind == "radio" else { return }
+        pause(); itemRequest = UUID(); statusObserver = nil; player.replaceCurrentItem(with: nil)
+        current = nil; position = 0; duration = 0; lyrics = []; sharedAt = nil
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
     private func start(_ track: ListeningTrack, url: URL) {
         do {
             NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
@@ -251,16 +269,19 @@ final class ListeningSpace: ObservableObject {
     func resume() { guard current != nil, player.currentItem != nil else { return }; try? AVAudioSession.sharedInstance().setActive(true); player.play() }
     func pause() { player.pause(); playRequest = UUID(); resolving = false; resolvingTrackID = nil; nowPlaying(); lastSync = .distantPast }
     func toggle() {
+        if current?.kind == "radio", let radioToggle { radioToggle(); return }
         if let selected = queue.first(where: { $0.id == selectedTrackID }), selected.id != current?.id { play(selected) }
         else if current == nil, let first = ListeningQueue.candidate(in: queue, selectedID: nil, forward: true) { play(first) }
         else { playing ? pause() : resume() }
     }
     func seek(_ value: Double) { guard value.isFinite else { return }; let target = max(0, min(duration > 0 ? duration : value, value)); player.seek(to: CMTime(seconds: target, preferredTimescale: 600)); position = target; nowPlaying(); lastSync = .distantPast }
     func next() {
+        if current?.kind == "radio" { radioNext?(); return }
         if mode == 2, let track = queue.filter({ (!$0.external || $0.qqMID != nil) && $0.id != selectedTrackID }).randomElement() { play(track); return }
         if let track = ListeningQueue.candidate(in: queue, selectedID: selectedTrackID ?? current?.id, forward: true) { play(track) } else { pause() }
     }
     func previous() {
+        if current?.kind == "radio" { if position > 3 { seek(0) } else { radioPrevious?() }; return }
         if selectedTrackID == current?.id, position > 3 { seek(0); return }
         if let track = ListeningQueue.candidate(in: queue, selectedID: selectedTrackID ?? current?.id, forward: false) { play(track) } else { seek(0) }
     }
@@ -282,14 +303,14 @@ final class ListeningSpace: ObservableObject {
         lastSync = .now
         do {
             let data: Data
-            if sharing, let current { data = try JSONSerialization.data(withJSONObject: ["title": current.title, "url": current.url, "kind": current.kind, "playing": playing, "position": max(0, min(86400, position))]) }
+            if sharing, let current, current.kind != "radio" { data = try JSONSerialization.data(withJSONObject: ["title": current.title, "url": current.url, "kind": current.kind, "playing": playing, "position": max(0, min(86400, position))]) }
             else { data = Data("null".utf8) }
             let payload = String(decoding: data, as: UTF8.self)
             guard payload != lastPayload else { return }
             let trackID = current?.id
             let _: PhoneOK = try await api.request("v1/context/listening", body: data)
             lastPayload = payload
-            sharedAt = sharing && trackID != nil && current?.id == trackID ? .now : nil
+            sharedAt = sharing && current?.kind != "radio" && trackID != nil && current?.id == trackID ? .now : nil
         } catch { self.error = "播放信息暂未同步给他" }
     }
     func episodes(feed: String) async throws -> [ListeningTrack] {
@@ -304,6 +325,7 @@ final class ListeningSpace: ObservableObject {
 }
 extension Notification.Name {
     static let morrowPauseListening = Notification.Name("morrow-pause-listening")
+    static let morrowStopRadio = Notification.Name("morrow-stop-radio")
     static let morrowStopVoice = Notification.Name("morrow-stop-voice")
 }
 struct ListeningHomeCard: View {

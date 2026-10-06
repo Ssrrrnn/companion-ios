@@ -77,6 +77,36 @@ final class CompanionUITests: XCTestCase {
             XCTAssertTrue(app.buttons["聊天"].waitForExistence(timeout: 5))
         }
     }
+    func testHomeLeftSwipeOpensSidebarAndSettings() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "--home", "--reset-draft"]; app.launch()
+        XCTAssertTrue(app.buttons["打开侧边栏"].waitForExistence(timeout: 15))
+        let scroll = app.scrollViews["home-scroll"]
+        scroll.swipeLeft()
+        let settings = app.buttons["sidebar-open-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+        XCTAssertTrue(app.textFields["settings-companion-name"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertTrue(app.segmentedControls["settings-appearance"].waitForExistence(timeout: 5))
+    }
+    func testSidebarCanCloseAndRadioProgramCanBeCreatedWithoutChat() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "--home", "--sidebar", "--reset-draft"]; app.launch()
+        let close = app.buttons["关闭侧边栏"]
+        XCTAssertTrue(close.waitForExistence(timeout: 15)); close.tap()
+        XCTAssertTrue(app.buttons["打开侧边栏"].waitForExistence(timeout: 5)); app.buttons["打开侧边栏"].tap()
+        let radio = app.buttons["sidebar-open-radio"]
+        XCTAssertTrue(radio.waitForExistence(timeout: 5)); radio.tap()
+        let add = app.buttons["radio-new-program"]
+        if !add.exists { app.swipeUp() }
+        XCTAssertTrue(add.waitForExistence(timeout: 5)); add.tap()
+        let title = app.textFields["radio-title"], text = app.textViews["radio-text"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Radio test")
+        text.tap(); text.typeText("Read this only in the radio.")
+        app.swipeUp()
+        let save = app.buttons["radio-save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5)); save.tap()
+        XCTAssertTrue(app.staticTexts["Radio test"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textViews["chat-composer"].exists)
+    }
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview", "--reset-draft"]

@@ -69,7 +69,7 @@ struct PendingMessage: Codable, Identifiable {
     let sentAt: Double
 }
 
-struct CompanionAPI {
+struct CompanionAPI: Equatable {
     let base: String
     let token: String
     func request<T: Decodable>(_ path: String, body: Data? = nil, method: String? = nil, timeout: TimeInterval = 180) async throws -> T {

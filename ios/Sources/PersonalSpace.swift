@@ -27,11 +27,21 @@ enum ChatPalette: String, CaseIterable, Identifiable {
         switch self { case .blue: return "信息蓝"; case .rose: return "玫瑰"; case .sage: return "鼠尾草" }
     }
     var color: Color {
-        switch self {
-        case .blue: return Color(red: 0.04, green: 0.40, blue: 0.91)
-        case .rose: return Color(red: 0.64, green: 0.25, blue: 0.39)
-        case .sage: return Color(red: 0.24, green: 0.43, blue: 0.36)
-        }
+        let selected = self
+        return Color(uiColor: UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                switch selected {
+                case .blue: return UIColor(red: 0.53, green: 0.74, blue: 1, alpha: 1)
+                case .rose: return UIColor(red: 0.98, green: 0.65, blue: 0.76, alpha: 1)
+                case .sage: return UIColor(red: 0.65, green: 0.83, blue: 0.72, alpha: 1)
+                }
+            }
+            switch selected {
+            case .blue: return UIColor(red: 0.04, green: 0.40, blue: 0.91, alpha: 1)
+            case .rose: return UIColor(red: 0.64, green: 0.25, blue: 0.39, alpha: 1)
+            case .sage: return UIColor(red: 0.24, green: 0.43, blue: 0.36, alpha: 1)
+            }
+        })
     }
 }
 
