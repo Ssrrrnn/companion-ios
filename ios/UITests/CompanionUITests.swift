@@ -101,6 +101,7 @@ final class CompanionUITests: XCTestCase {
         let title = app.textFields["radio-title"], text = app.textViews["radio-text"]
         XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Radio test")
         text.tap(); text.typeText("Read this only in the radio.")
+        app.buttons["完成输入"].tap()
         app.swipeUp()
         let save = app.buttons["radio-save"]
         XCTAssertTrue(save.waitForExistence(timeout: 5)); save.tap()

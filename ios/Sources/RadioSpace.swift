@@ -44,6 +44,7 @@ final class RadioSpace: ObservableObject {
     @Published private(set) var prepared = 0
     @Published private(set) var preparing = false
     @Published private(set) var sleepUntil: Date?
+    @Published private(set) var sleepMinutes = 0
     @Published private(set) var completed = false
     @Published var error: String?
     private let defaults: UserDefaults
@@ -88,13 +89,14 @@ final class RadioSpace: ObservableObject {
     }
     private func persist() { defaults.set(try? JSONEncoder().encode(programs), forKey: "radio_programs_v1") }
     func prepare(_ program: RadioProgram, host: String, opening: Bool) {
-        stop(); current = program; completed = false; index = 0
+        let preferredSleep = sleepMinutes
+        stop(); sleepMinutes = preferredSleep; current = program; completed = false; index = 0
         parts = RadioScript.parts(text: program.text, title: program.title, host: host, opening: opening)
         guard !parts.isEmpty, let api, let listening else { error = "先连接小家，再开始电台。"; return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-preview") { error = "预览不会生成或播放真实声音"; return }
         #endif
-        listening.pause(); NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
+        listening.prepareForRadio(); NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
         preparing = true; prepared = 0; error = nil
         let stamp = generation, script = parts
         task = Task {
@@ -112,7 +114,7 @@ final class RadioSpace: ObservableObject {
                     files.append(url); prepared = files.count
                 }
                 guard stamp == generation else { return }
-                preparing = false; task = nil; playPart()
+                preparing = false; task = nil; setSleep(minutes: sleepMinutes); playPart()
             } catch {
                 guard stamp == generation else { return }
                 preparing = false; task = nil
@@ -143,8 +145,8 @@ final class RadioSpace: ObservableObject {
         else { listening?.resume() }
     }
     func setSleep(minutes: Int) {
-        timer?.cancel(); timer = nil
-        guard minutes > 0 else { sleepUntil = nil; return }
+        timer?.cancel(); timer = nil; sleepMinutes = max(0, minutes); sleepUntil = nil
+        guard minutes > 0, !files.isEmpty, !preparing else { sleepUntil = nil; return }
         let deadline = Date.now.addingTimeInterval(Double(minutes * 60)); sleepUntil = deadline
         timer = Task {
             do { try await Task.sleep(for: .seconds(minutes * 60)) } catch { return }
@@ -162,7 +164,7 @@ final class RadioSpace: ObservableObject {
     #endif
     func stop() {
         generation = UUID(); task?.cancel(); task = nil; preparing = false
-        timer?.cancel(); timer = nil; sleepUntil = nil
+        timer?.cancel(); timer = nil; sleepUntil = nil; sleepMinutes = 0
         listening?.stopRadio()
         for url in files { try? FileManager.default.removeItem(at: url) }
         files = []; prepared = 0

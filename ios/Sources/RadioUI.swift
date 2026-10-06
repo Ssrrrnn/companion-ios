@@ -25,7 +25,6 @@ struct RadioView: View {
     @AppStorage("companion_name") private var name = "他"
     @AppStorage("radio_opening") private var opening = true
     @State private var composer = false
-    @State private var timerMinutes = 0
     private var playing: Bool { listening.current?.kind == "radio" && listening.playing }
     var body: some View {
         ScrollView {
@@ -66,9 +65,10 @@ struct RadioView: View {
                         Label("睡眠定时", systemImage: "moon.zzz").font(.subheadline)
                         Spacer()
                         Menu {
-                            ForEach([0, 10, 20, 30, 60], id: \.self) { minutes in Button(minutes == 0 ? "关闭定时" : "\(minutes) 分钟后停止") { timerMinutes = minutes; radio.setSleep(minutes: minutes) } }
-                        } label: { Text(radio.sleepUntil == nil ? "未开启" : "\(timerMinutes) 分钟").font(.subheadline); Image(systemName: "chevron.down").font(.caption) }
+                            ForEach([0, 10, 20, 30, 60], id: \.self) { minutes in Button(minutes == 0 ? "关闭定时" : "\(minutes) 分钟后停止") { radio.setSleep(minutes: minutes) } }
+                        } label: { Text(radio.sleepMinutes == 0 ? "未开启" : "\(radio.sleepMinutes) 分钟").font(.subheadline); Image(systemName: "chevron.down").font(.caption) }
                     }
+                    if radio.sleepMinutes > 0 && radio.sleepUntil == nil { Text("声音准备好，开始播放后计时。").font(.caption).foregroundStyle(.secondary) }
                     if let until = radio.sleepUntil { Text("\(until.formatted(date: .omitted, time: .shortened)) 停止播放").font(.caption).foregroundStyle(.secondary) }
                 }
                 HStack { Text("节目架").font(.headline); Spacer(); Button { composer = true } label: { Label("新一期", systemImage: "plus") }.font(.subheadline).accessibilityIdentifier("radio-new-program") }
@@ -146,8 +146,11 @@ struct RadioComposer: View {
                 }.buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.unicodeScalars.count > RadioScript.limit).accessibilityIdentifier("radio-save")
                 Text("先保存节目，确认文字后再开始朗读。每期最多 6000 字，长内容可以分期。").font(.caption).foregroundStyle(.secondary)
             }.padding(22)
-        }.background { GlassWallpaper() }.navigationTitle("准备一期电台").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+        }.scrollDismissesKeyboard(.interactively).background { GlassWallpaper() }.navigationTitle("准备一期电台").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成输入") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) } }
+            }
             .sheet(isPresented: $chooser) { sources }
     }
     private var sources: some View {

@@ -32,6 +32,15 @@ final class RadioTests: XCTestCase {
         XCTAssertTrue(RadioSpace(defaults: defaults).programs.isEmpty)
         XCTAssertNil(radio.save(title: "过长", text: String(repeating: "字", count: 6001), source: "我的选文", tone: "natural"))
     }
+    @MainActor func testSleepTimerConfiguredBeforePreparationStartsOnlyWithAudio() {
+        let radio = RadioSpace(defaults: UserDefaults(suiteName: "morrow-radio-timer-tests")!)
+        radio.setSleep(minutes: 10)
+        XCTAssertEqual(radio.sleepMinutes, 10)
+        XCTAssertNil(radio.sleepUntil)
+        radio.stop()
+        XCTAssertEqual(radio.sleepMinutes, 0)
+        XCTAssertNil(radio.sleepUntil)
+    }
     func testHomeSwipeDoesNotInterceptVerticalScrollOrSmallDrags() {
         XCTAssertTrue(HomeSwipe.opens(x: -110, y: 12))
         XCTAssertFalse(HomeSwipe.opens(x: -40, y: 2))

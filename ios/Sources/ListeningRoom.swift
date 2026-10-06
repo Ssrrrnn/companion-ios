@@ -234,6 +234,11 @@ final class ListeningSpace: ObservableObject {
         }
         start(track, url: url)
     }
+    func prepareForRadio() {
+        pause(); itemRequest = UUID(); statusObserver = nil; player.replaceCurrentItem(with: nil)
+        current = nil; selectedTrackID = nil; position = 0; duration = 0; lyrics = []; sharedAt = nil
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
     func playRadio(title: String, programID: UUID, part: Int, url: URL) {
         guard url.isFileURL else { return }
         playRequest = UUID(); resolving = false; resolvingTrackID = nil; selectedTrackID = nil
@@ -254,7 +259,7 @@ final class ListeningSpace: ObservableObject {
             let item = AVPlayerItem(url: url); current = track; position = 0; duration = 0; error = nil; lyrics = []; sharedAt = nil; artworkImage = nil; lastTick = .now
             itemRequest = UUID()
             statusObserver = item.observe(\.status, options: [.new]) { [weak self, weak item] _, _ in
-                Task { @MainActor in if let self, let item, item === self.player.currentItem, item.status == .failed { self.error = track.qqMID == nil ? "音频未能播放，请检查音频地址" : "QQ 音乐音频暂未能播放，请重新登录或在官方 App 播放"; self.pause() } }
+                Task { @MainActor in if let self, let item, item === self.player.currentItem, item.status == .failed { self.error = track.kind == "radio" ? "这段电台音频未能播放，请重新准备节目。" : track.qqMID == nil ? "音频未能播放，请检查音频地址" : "QQ 音乐音频暂未能播放，请重新登录或在官方 App 播放"; self.pause() } }
             }
             player.replaceCurrentItem(with: item); player.play(); nowPlaying(); lastSync = .distantPast
             if let artwork = track.artwork, let cover = QQWire.imageURL(artwork) {
