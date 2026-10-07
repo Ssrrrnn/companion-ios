@@ -2,6 +2,16 @@ import XCTest
 @testable import Companion
 
 final class CallTests: XCTestCase {
+    func testWireUUIDCaseDoesNotDropCurrentAudioAndLateTurnsAreRejected() throws {
+        let current = UUID().uuidString
+        let data = Data("{\"type\":\"audio\",\"request_id\":\"\(current.lowercased())\"}".utf8)
+        let event = try JSONDecoder().decode(CallEvent.self, from: data)
+        XCTAssertTrue(event.belongs(to: current))
+        XCTAssertFalse(event.belongs(to: UUID().uuidString))
+        XCTAssertFalse(event.belongs(to: nil))
+        let invalid = try JSONDecoder().decode(CallEvent.self, from: Data("{\"type\":\"audio\",\"request_id\":\"invalid\"}".utf8))
+        XCTAssertFalse(invalid.belongs(to: "invalid"))
+    }
     func testStreamedPCMLittleEndianSignedSamplesAndMalformedChunks() throws {
         let samples = try XCTUnwrap(CallPCM.samples(Data([0, 0, 0, 128, 255, 127])))
         XCTAssertEqual(samples[0], 0)

@@ -31,6 +31,10 @@ struct CallEvent: Decodable {
     var message: String?
     var complete: Bool?
     var sample_rate: Int?
+    func belongs(to id: String?) -> Bool {
+        guard let id, let expected = UUID(uuidString: id), let request_id, let incoming = UUID(uuidString: request_id) else { return false }
+        return expected == incoming
+    }
 }
 
 enum CallPCM {
@@ -258,7 +262,7 @@ final class CallSpace: NSObject, ObservableObject {
             guard event.sample_rate == 24000 else { throw ConnectionError.server("通话声音格式不匹配。") }
             send("", greeting: true); return
         }
-        guard let id = event.request_id, id == replyID else { return } // Discard late output after interruption.
+        guard event.belongs(to: replyID), let id = replyID else { return } // UUIDs can differ in case across Swift/Python.
         switch event.type {
         case "thinking": phase = "他在听，也在想"
         case "caption":
