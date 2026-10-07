@@ -254,6 +254,7 @@ final class ListeningSpace: ObservableObject {
     }
     private func start(_ track: ListeningTrack, url: URL) {
         do {
+            NotificationCenter.default.post(name: .morrowStopCall, object: nil)
             NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
@@ -272,7 +273,16 @@ final class ListeningSpace: ObservableObject {
             }
         } catch { self.error = "音频会话未启动" }
     }
-    func resume() { guard current != nil, player.currentItem != nil else { return }; try? AVAudioSession.sharedInstance().setActive(true); player.play() }
+    func resume() {
+        guard let current, player.currentItem != nil else { return }
+        NotificationCenter.default.post(name: .morrowStopCall, object: nil)
+        NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: current.kind == "radio" ? .spokenAudio : .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+            player.play()
+        } catch { error = "音频会话未启动" }
+    }
     func pause() { player.pause(); playRequest = UUID(); resolving = false; resolvingTrackID = nil; nowPlaying(); lastSync = .distantPast }
     func toggle() {
         if current?.kind == "radio", let radioToggle { radioToggle(); return }

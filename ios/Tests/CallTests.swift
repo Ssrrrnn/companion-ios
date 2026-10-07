@@ -33,4 +33,17 @@ final class CallTests: XCTestCase {
         XCTAssertEqual(CallRecord(id: UUID(), started: start, ended: nil, lines: []).duration, 0)
         XCTAssertEqual(CallRecord(id: UUID(), started: start, ended: start.addingTimeInterval(75), lines: []).duration, 75)
     }
+    @MainActor func testMediaHandoffEndsCallAndRetainsItsTranscript() async throws {
+        let suite = "morrow-call-handoff-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let call = CallSpace(defaults: defaults)
+        call.preview()
+        NotificationCenter.default.post(name: .morrowStopCall, object: nil)
+        for _ in 0..<10 { if !call.active { break }; await Task.yield() }
+        XCTAssertFalse(call.active)
+        XCTAssertEqual(call.records.first?.lines.count, 2)
+        XCTAssertNotNil(call.records.first?.ended)
+    }
+
 }
