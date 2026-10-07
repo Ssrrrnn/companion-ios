@@ -8,7 +8,7 @@ struct CallHomeCard: View {
                 Image(systemName: "phone.fill").font(.title3).frame(width: 50, height: 50).background(homeAccent.opacity(0.12), in: Circle())
                 VStack(alignment: .leading, spacing: 6) {
                     Text("想听听\(name)的声音").font(.subheadline.weight(.semibold))
-                    Text("英文陪你聊 · 中文实时字幕").font(.caption).foregroundStyle(.secondary)
+                    Text("你说中文 · 他答英文 · 随时打断").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(); Image(systemName: "arrow.up.right").font(.caption)
             }.foregroundStyle(homeAccent).padding(20).glassSurface(in: RoundedRectangle(cornerRadius: 24))
@@ -20,7 +20,6 @@ struct CompanionCallView: View {
     @EnvironmentObject private var call: CallSpace
     @EnvironmentObject private var model: CompanionModel
     @AppStorage("companion_name") private var name = "他"
-    @AppStorage("call_input_language") private var language = "zh-CN"
     @State private var history = false
     var body: some View {
         ScrollView {
@@ -48,7 +47,7 @@ struct CompanionCallView: View {
                 if let error = call.error {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(error).font(.footnote).foregroundStyle(.red)
-                        if call.active, call.phase == "声音暂不可用" { Button("重播这句") { call.retryAudio() } }
+                        if call.active { Text("可以直接继续说中文，也可以点“我来说”。").font(.caption).foregroundStyle(.secondary) }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if call.active {
@@ -63,8 +62,8 @@ struct CompanionCallView: View {
                     }
                 } else {
                     Button { call.attach(api: model.api); call.start() } label: { Label("拨给\(name)", systemImage: "phone.fill").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.borderedProminent).disabled(!model.connected).accessibilityIdentifier("call-start")
-                    Picker("我说的语言", selection: $language) { Text("中文").tag("zh-CN"); Text("英文").tag("en-US") }.pickerStyle(.segmented)
-                    Text("应用内语音通话，使用 ElevenLabs 的伴侣音色。你说的话会经语音识别转为文字，回复以中文翻译为主。通话记录保存在手机里；已发送的对话进入共同聊天记忆。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
+                    Label("你说中文，他用英语回答", systemImage: "waveform").font(.subheadline).foregroundStyle(homeAccent)
+                    Text("保持麦克风开启，说完会自动接话；他说话时你也可以直接开口打断。使用 ElevenLabs 的伴侣音色，中文翻译为主，保留英文原文。内容只显示在通话页面和通话记录里，同一通电话会记住前面聊过的话。").font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                 }
                 if !call.lines.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
@@ -91,6 +90,7 @@ struct CallTranscriptRow: View {
             HStack { Text(line.role == "user" ? "我" : name); Spacer(); Text(line.at, format: .dateTime.hour().minute()) }.font(.caption).foregroundStyle(.secondary)
             Text(line.translation).font(.body).lineSpacing(5)
             if !line.original.isEmpty { Text(line.original).font(.caption).foregroundStyle(.secondary).lineSpacing(3) }
+            if line.interrupted == true { Text("这句被打断了").font(.caption2).foregroundStyle(.secondary) }
         }.padding(17).frame(maxWidth: .infinity, alignment: .leading).glassSurface(in: RoundedRectangle(cornerRadius: 20)).textSelection(.enabled)
     }
 }

@@ -2,7 +2,11 @@
 
 A generic SwiftUI client for a personal companion service. Translucent glass chat with sentence bubbles, persistent audio playback, quote replies, search, diaries, favorites and a personal daily space use your own HTTPS backend. Credentials are entered in Settings and the connection token is stored in the iOS Keychain. This repository and its public releases contain no service credentials.
 
-## Current release: 0.10.0
+## Current release: 0.12.0
+
+Calls use an owner-authenticated WSS connection at `/v1/call/realtime`. Chinese speech recognition stays active during generation and playback. Recognized speech interrupts the old request, stops queued output and rejects late events by request ID. The existing persona/model streams short bilingual sentences; ElevenLabs streams 24 kHz signed little-endian PCM into an AVAudioPlayerNode on the same voice-processed AVAudioEngine as the microphone. Captions emphasize Chinese and retain English originals. Default call TTS is `eleven_flash_v2_5`, with the existing voice and an optional server `ELEVENLABS_CALL_TTS_MODEL` override.
+
+Call turns stay in separate durable receipts and local call records; they are never appended to `/v1/history`. Old call turns previously written to chat are excluded by their receipt IDs without deleting normal messages. Later turns in one call receive Chinese user words and only English sentences acknowledged as fully played. Interruptions/disconnects cancel upstream model and voice requests and keep interrupted receipts. No automatic provider retry can silently rebill a reused request ID. Voice failures retain bilingual text and the call can continue. Physical microphone, speaker echo cancellation, Bluetooth, provider streaming support and actual response latency require device verification. Foreground-only calling and existing signing limitations remain.
 
 The player now has visible song-search and queue-management buttons. Search reads public QQ catalog results, supports paging where the full search endpoint is available, and falls back to genuine quick-search results if needed. A QQ account is still required for QQ playback. Tap a song row to play; the queue supports swipe removal, selection, select-all, batch removal and confirmed clearing. These operations affect only Morrow's local playback queue.
 

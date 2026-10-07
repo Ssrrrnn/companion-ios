@@ -2,6 +2,42 @@ import XCTest
 @testable import Companion
 
 final class CallTests: XCTestCase {
+    func testWireUUIDCaseDoesNotDropCurrentAudioAndLateTurnsAreRejected() throws {
+        let current = UUID().uuidString
+        let data = Data("{\"type\":\"audio\",\"request_id\":\"\(current.lowercased())\"}".utf8)
+        let event = try JSONDecoder().decode(CallEvent.self, from: data)
+        XCTAssertTrue(event.belongs(to: current))
+        XCTAssertFalse(event.belongs(to: UUID().uuidString))
+        XCTAssertFalse(event.belongs(to: nil))
+        let invalid = try JSONDecoder().decode(CallEvent.self, from: Data("{\"type\":\"audio\",\"request_id\":\"invalid\"}".utf8))
+        XCTAssertFalse(invalid.belongs(to: "invalid"))
+    }
+    func testStreamedPCMLittleEndianSignedSamplesAndMalformedChunks() throws {
+        let samples = try XCTUnwrap(CallPCM.samples(Data([0, 0, 0, 128, 255, 127])))
+        XCTAssertEqual(samples[0], 0)
+        XCTAssertEqual(samples[1], -1)
+        XCTAssertEqual(samples[2], 32767.0 / 32768.0, accuracy: 0.00001)
+        XCTAssertNil(CallPCM.samples(Data()))
+        XCTAssertNil(CallPCM.samples(Data([0])))
+        XCTAssertNil(CallPCM.samples(Data(repeating: 0, count: 16386)))
+    }
+    func testCallSocketKeepsCredentialInHeaderAndRejectsInsecureAddress() throws {
+        let connection = try CompanionAPI(base: "https://example.com/personal", token: String(repeating: "a", count: 32)).callSocket()
+        let request = try XCTUnwrap(connection.originalRequest)
+        XCTAssertEqual(request.url?.absoluteString, "wss://example.com/personal/v1/call/realtime")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + String(repeating: "a", count: 32))
+        XCTAssertNil(request.url?.query)
+        XCTAssertThrowsError(try CompanionAPI(base: "http://example.com", token: String(repeating: "a", count: 32)).callSocket())
+        XCTAssertThrowsError(try CompanionAPI(base: "https://example.com?token=x", token: String(repeating: "a", count: 32)).callSocket())
+        connection.cancel(with: .normalClosure, reason: nil)
+    }
+    func testOldCallRecordsRemainReadableAndInterruptedTurnsPersist() throws {
+        let json = "{\"id\":\"\(UUID().uuidString)\",\"role\":\"assistant\",\"segments\":[{\"en\":\"Hello.\",\"zh\":\"你好。\"}],\"at\":0}"
+        var line = try JSONDecoder().decode(CallLine.self, from: Data(json.utf8))
+        XCTAssertNil(line.interrupted)
+        line.interrupted = true
+        XCTAssertEqual(try JSONDecoder().decode(CallLine.self, from: JSONEncoder().encode(line)).interrupted, true)
+    }
     func testBilingualTranscriptKeepsOriginalAndTranslationThroughPersistence() throws {
         let line = CallLine(id: UUID(), role: "assistant", segments: [CallSegment(en: "I'm here.", zh: "我在呢。"), CallSegment(en: "Take your time.", zh: "慢慢说。")], at: .now)
         let restored = try JSONDecoder().decode(CallLine.self, from: JSONEncoder().encode(line))
