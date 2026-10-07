@@ -43,6 +43,7 @@ struct HomeSidebar: View {
                 }
                 VStack(spacing: 4) {
                     item("设置与外观", subtitle: "头像、壁纸与纪念日", icon: "slider.horizontal.3", route: .settings)
+                    item("语音通话", subtitle: "英文声音，中文字幕", icon: "phone", route: .call)
                     item("他的电台", subtitle: "把文字，读成陪伴", icon: "dot.radiowaves.left.and.right", route: .radio)
                     item("一起听", subtitle: "音乐与播客", icon: "music.note", route: .listening)
                     item("一起读书", subtitle: "停在同一页", icon: "books.vertical", route: .books)

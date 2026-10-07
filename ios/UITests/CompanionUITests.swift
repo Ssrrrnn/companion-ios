@@ -210,8 +210,9 @@ final class CompanionUITests: XCTestCase {
         app.launchArguments = ["--ui-preview", "--home"]
         app.launch()
         app.buttons["打开侧边栏"].tap()
-        XCTAssertTrue(app.buttons["通知与健康"].waitForExistence(timeout: 3))
-        app.buttons["通知与健康"].tap()
+        XCTAssertTrue(app.buttons["sidebar-open-permissions"].waitForExistence(timeout: 3))
+        for _ in 0..<4 { if app.buttons["sidebar-open-permissions"].isHittable { break }; app.scrollViews["home-sidebar"].swipeUp() }
+        app.buttons["sidebar-open-permissions"].tap()
         XCTAssertTrue(app.staticTexts["消息通知"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["允许 Morrow 通知"].exists)
         app.terminate()
@@ -305,4 +306,18 @@ final class CompanionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["music-search-submit"].isEnabled)
         XCTAssertTrue(app.staticTexts["可以先搜索歌曲，播放 QQ 音乐时需要连接你的账号。"].exists)
     }
+    func testCallShowsChinesePrimaryEnglishOriginalAndSavesHistoryAfterHangup() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "--call", "--reset-draft"]; app.launch()
+        XCTAssertTrue(app.staticTexts["call-caption-zh"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["call-caption-zh"].label, "我在呢。跟我说说，今天过得怎么样？")
+        XCTAssertTrue(app.staticTexts["call-caption-en"].exists)
+        let end = app.buttons["call-end"]
+        for _ in 0..<3 { if end.isHittable { break }; app.swipeUp() }
+        end.tap()
+        XCTAssertTrue(app.staticTexts["通话已结束"].waitForExistence(timeout: 5))
+        app.buttons["通话记录"].tap()
+        XCTAssertTrue(app.navigationBars["通话记录"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["我在呢。跟我说说，今天过得怎么样？"].exists)
+    }
+
 }

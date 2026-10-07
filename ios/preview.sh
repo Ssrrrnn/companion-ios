@@ -17,11 +17,11 @@ xcodebuild -project Companion.xcodeproj -scheme Companion -configuration Debug \
 xcrun simctl install "$SIMULATOR_ID" build-simulator/Build/Products/Debug-iphonesimulator/Companion.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 # Launch in each appearance so screenshots also verify a cold dark-mode start.
-for page in chat home books calendar activity mood-editor listening keepsakes music-card queue sidebar settings radio; do
+for page in chat home books calendar activity mood-editor listening keepsakes music-card queue sidebar settings radio call; do
   for appearance in light dark; do
     xcrun simctl terminate "$SIMULATOR_ID" com.ssrrrnn.companion || true
     xcrun simctl ui "$SIMULATOR_ID" appearance "$appearance"
-    if [ "$page" = sidebar ] || [ "$page" = settings ] || [ "$page" = radio ]; then
+    if [ "$page" = sidebar ] || [ "$page" = settings ] || [ "$page" = radio ] || [ "$page" = call ]; then
       xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --home "--$page" --reset-draft -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'
     elif [ "$page" = queue ]; then
       xcrun simctl launch "$SIMULATOR_ID" com.ssrrrnn.companion --ui-preview --listening --queue-preview --reset-draft -AppleLocale zh_CN -AppleLanguages '(zh-Hans)'

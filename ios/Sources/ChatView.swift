@@ -155,6 +155,9 @@ struct ChatView: View {
                 }.accessibilityLabel("查看\(name)的资料")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: CompanionRoute.call) { Image(systemName: "phone").frame(width: 38, height: 38).glassSurface(in: Circle()) }.accessibilityLabel("语音通话")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { focused = false; searching = true } label: {
                     Image(systemName: "magnifyingglass").frame(width: 38, height: 38).glassSurface(in: Circle())
                 }.accessibilityLabel("搜索聊天")

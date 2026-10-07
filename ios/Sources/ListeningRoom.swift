@@ -201,6 +201,7 @@ final class ListeningSpace: ObservableObject {
     private func persist() { if let data = try? JSONEncoder().encode(queue) { defaults.set(data, forKey: "listening_queue") } }
     func play(_ track: ListeningTrack) {
         NotificationCenter.default.post(name: .morrowStopRadio, object: nil)
+        NotificationCenter.default.post(name: .morrowStopCall, object: nil)
         let normalized = ListeningQueue.normalized(track)
         guard add(normalized), let track = queue.first(where: { ListeningQueue.key($0) == ListeningQueue.key(normalized) }) else { return }
         selectedTrackID = track.id

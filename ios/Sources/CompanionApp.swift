@@ -21,6 +21,7 @@ struct CompanionApp: App {
     @StateObject private var weather = WeatherSpace()
     @StateObject private var listening = ListeningSpace()
     @StateObject private var radio = RadioSpace()
+    @StateObject private var call = CallSpace()
     @StateObject private var health = HealthSpace()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("app_appearance") private var appearance = "system"
@@ -30,17 +31,17 @@ struct CompanionApp: App {
                 .environmentObject(library).environmentObject(device)
                 .environmentObject(shared).environmentObject(phone)
                 .environmentObject(reading).environmentObject(activity).environmentObject(location)
-                .environmentObject(notifications).environmentObject(weather).environmentObject(listening).environmentObject(health).environmentObject(radio)
+                .environmentObject(notifications).environmentObject(weather).environmentObject(listening).environmentObject(health).environmentObject(radio).environmentObject(call)
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .environment(\.calendar, SharedDates.calendar)
                 .environment(\.timeZone, SharedDates.calendar.timeZone)
-                .onChange(of: model.api) { _, api in radio.attach(listening, api: api) }
+                .onChange(of: model.api) { _, api in radio.attach(listening, api: api); call.attach(api: api) }
                 .onReceive(NotificationCenter.default.publisher(for: .morrowStopVoice)) { _ in model.stopAudio() }
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .task(id: scenePhase) {
                     device.setActive(scenePhase == .active)
                     if scenePhase == .active { await notifications.reload() }
-                    guard scenePhase == .active else { model.stopAudio(); location.background(); return }
+                    guard scenePhase == .active else { if scenePhase == .background { call.end() }; model.stopAudio(); location.background(); return }
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-preview") {
                         if ProcessInfo.processInfo.arguments.contains("--reset-draft") { UserDefaults.standard.removeObject(forKey: "chat_draft_v1") }
@@ -51,6 +52,7 @@ struct CompanionApp: App {
                             for index in 1...12 { listening.add(ListeningTrack(id: "preview-queue-\(index)", title: "第\(index)首预览歌曲", url: "https://y.qq.com/n/ryqq/songDetail/PreviewQueue\(index)", kind: "music", artist: "预览歌手", qqMID: "PreviewQueue\(index)")) }
                         }
                         if ProcessInfo.processInfo.arguments.contains("--radio") { radio.preview() }
+                        if ProcessInfo.processInfo.arguments.contains("--call") { call.preview() }
                         shared.preview()
                         reading.preview(library); activity.preview(); weather.preview()
                         model.connected = true
@@ -156,6 +158,7 @@ struct CompanionTabs: View {
                 case .browsing: BrowsingLogView()
                 case .podcasts: PodcastDiscoveryView()
                 case .radio: RadioView()
+                case .call: CompanionCallView()
                 }
             }
         }
@@ -180,6 +183,7 @@ struct CompanionTabs: View {
                 if ProcessInfo.processInfo.arguments.contains("--sidebar") { drawer = true }
                 else if ProcessInfo.processInfo.arguments.contains("--settings") { path = [.settings] }
                 else if ProcessInfo.processInfo.arguments.contains("--radio") { path = [.radio] }
+                else if ProcessInfo.processInfo.arguments.contains("--call") { path = [.call] }
                 else if ProcessInfo.processInfo.arguments.contains("--activity") && path.isEmpty { path = [.activity] }
                 else if ProcessInfo.processInfo.arguments.contains("--calendar") && path.isEmpty { path = [.calendar] }
                 else if ProcessInfo.processInfo.arguments.contains("--books") && path.isEmpty { path = [.books] }
@@ -212,7 +216,7 @@ struct CompanionTabs: View {
     }
 }
 
-enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing, podcasts, radio }
+enum CompanionRoute: Hashable { case chat, books, device, calendar, activity, settings, permissions, listening, browsing, podcasts, radio, call }
 
 struct HomeView: View {
     @EnvironmentObject private var activity: ActivitySpace
@@ -272,6 +276,7 @@ struct HomeView: View {
                     }
                 }.padding(24).glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous))
                 WeatherCard()
+                CallHomeCard()
                 ListeningHomeCard()
                 RadioHomeCard()
                 NavigationLink(value: CompanionRoute.activity) {
@@ -338,7 +343,7 @@ struct HomeView: View {
                 if let note = shared.entries.last(where: { $0.kind == "note" && $0.actor == "assistant" }) {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("他留给你的纸条", systemImage: "envelope.open").font(.caption).foregroundStyle(homeAccent)
-                        Text(note.text).font(.subheadline).lineSpacing(5).lineLimit(5)
+                        SharedNoteContent(text: note.text)
                         Text(note.day).font(.caption2).foregroundStyle(.tertiary)
                     }.padding(20).frame(maxWidth: .infinity, alignment: .leading).glassSurface(in: RoundedRectangle(cornerRadius: 24))
                 }
@@ -385,7 +390,7 @@ struct HomeView: View {
                     ForEach(shared.entries.filter { $0.kind == "note" }.reversed()) { note in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(note.actor == "assistant" ? "他留给你的" : "我留下的").font(.caption).foregroundStyle(.secondary)
-                            Text(note.text).textSelection(.enabled)
+                            SharedNoteContent(text: note.text)
                             Text(note.day).font(.caption2).foregroundStyle(.tertiary)
                         }.padding(.vertical, 6)
                     }

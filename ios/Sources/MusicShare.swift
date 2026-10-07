@@ -139,3 +139,14 @@ struct MusicShareDetail: View {
 }
 
 extension Notification.Name { static let morrowOpenListening = Notification.Name("morrow-open-listening") }
+
+struct SharedNoteContent: View {
+    let text: String
+    var body: some View {
+        let content = MusicShareContent(text)
+        VStack(alignment: .leading, spacing: 12) {
+            if !content.body.isEmpty { Text(content.body).font(.subheadline).lineSpacing(5).textSelection(.enabled) }
+            ForEach(content.shares) { MusicShareCard(share: $0) }
+        }
+    }
+}

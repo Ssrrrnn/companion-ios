@@ -85,6 +85,12 @@ struct ActivitySource: Equatable, Codable, Identifiable {
 }
 struct ActivityEvidence: Equatable, Codable {
     var book_id: String?; var page: Int?; var page_count: Int?; var sources: [ActivitySource]?
+    var music_url: String?
+    var music_title: String?
+    var music_artist: String?
+    var entry_id: String?
+    var diary_id: String?
+    var favorite_id: String?
     var memories_reviewed: Int?; var error_type: String?
 }
 struct CompanionActivity: Equatable, Codable, Identifiable {
@@ -265,7 +271,7 @@ struct CompanionActivityView: View {
 private struct ActivityTimelineRow: View {
     let item: CompanionActivity
     private var symbol: String {
-        switch item.kind { case "reading": return "book"; case "research": return "sparkle.magnifyingglass"; case "note": return "pencil.line"; case "review": return "heart.text.square"; case "plan": return "sun.max"; default: return "moon.stars" }
+        switch item.kind { case "reading": return "book"; case "research": return "sparkle.magnifyingglass"; case "note", "shared_note": return "pencil.line"; case "diary": return "book.closed"; case "music": return "music.note"; case "favorite": return "heart.fill"; case "review": return "heart.text.square"; case "plan": return "sun.max"; default: return "moon.stars" }
     }
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -288,6 +294,7 @@ private struct ActivityTimelineRow: View {
                     }
                 }
                 if !item.text.isEmpty { Text(item.text).font(.subheadline).foregroundStyle(.secondary).lineSpacing(5).textSelection(.enabled) }
+                if let url = item.evidence.music_url, let music = MusicShare.from(url, label: (item.evidence.music_title ?? "") + " · " + (item.evidence.music_artist ?? "")) { MusicShareCard(share: music) }
                 if let count = item.evidence.memories_reviewed { Text("回看了 \(count) 条记忆").font(.caption).foregroundStyle(.secondary) }
                 ForEach(item.evidence.sources ?? []) { source in
                     if let url = URL(string: source.url), url.scheme == "https" {

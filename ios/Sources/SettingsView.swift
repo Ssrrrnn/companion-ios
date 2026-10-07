@@ -41,6 +41,8 @@ struct SettingsView: View {
                 }
                 appearanceCard
                 SettingsCard(title: "一起生活", icon: "sparkles") {
+                    settingLink("语音通话与记录", icon: "phone", route: .call)
+                    Divider()
                     settingLink("他的电台", icon: "dot.radiowaves.left.and.right", route: .radio)
                     Divider()
                     settingLink("通知、天气与健康", icon: "bell", route: .permissions)

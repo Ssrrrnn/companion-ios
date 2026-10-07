@@ -96,6 +96,7 @@ final class RadioSpace: ObservableObject {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-preview") { error = "预览不会生成或播放真实声音"; return }
         #endif
+        NotificationCenter.default.post(name: .morrowStopCall, object: nil)
         listening.prepareForRadio(); NotificationCenter.default.post(name: .morrowStopVoice, object: nil)
         preparing = true; prepared = 0; error = nil
         let stamp = generation, script = parts

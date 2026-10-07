@@ -14,6 +14,8 @@
     <key>LSApplicationCategoryType</key><string>public.app-category.lifestyle</string>
     <key>NSCalendarsFullAccessUsageDescription</key><string>在你授权后，小家读取你所选日历的日程标题和时间，供伴侣查看，并在你指定的日历添加日程。不会读取或修改其他手机内容。</string>
     <key>NSLocationWhenInUseUsageDescription</key><string>在你开启分享并授权后，小家在使用期间采样当前位置、时间和精度，供伴侣实际调用。关闭分享后不再上传定位。</string>
+    <key>NSMicrophoneUsageDescription</key><string>在你拨打应用内语音通话时使用麦克风，让伴侣听到你识别后的话语。</string>
+    <key>NSSpeechRecognitionUsageDescription</key><string>把通话中你说的话转为文字，发送给伴侣并保留通话记录。语音识别可能由 Apple 服务处理。</string>
     <key>UIBackgroundModes</key><array><string>audio</string></array>
     <key>NSHealthShareUsageDescription</key><string>在支持健康读取的签名版本中，经你授权，Morrow 读取今日步数概要。你选择分享后，伴侣才能看到这份概要。</string>
     <key>MorrowHealthKitEnabled</key><false/>

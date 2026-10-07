@@ -200,6 +200,7 @@ final class CompanionModel: ObservableObject {
         }
         stopAudio()
         do {
+            NotificationCenter.default.post(name: .morrowStopCall, object: nil)
             NotificationCenter.default.post(name: .morrowPauseListening, object: nil)
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
             try AVAudioSession.sharedInstance().setActive(true)
