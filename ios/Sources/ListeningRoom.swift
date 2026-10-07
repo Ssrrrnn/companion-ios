@@ -281,7 +281,7 @@ final class ListeningSpace: ObservableObject {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: current.kind == "radio" ? .spokenAudio : .default)
             try AVAudioSession.sharedInstance().setActive(true)
             player.play()
-        } catch { error = "音频会话未启动" }
+        } catch { self.error = "音频会话未启动" }
     }
     func pause() { player.pause(); playRequest = UUID(); resolving = false; resolvingTrackID = nil; nowPlaying(); lastSync = .distantPast }
     func toggle() {
