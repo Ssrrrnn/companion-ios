@@ -72,6 +72,20 @@ struct PendingMessage: Codable, Identifiable {
 struct CompanionAPI: Equatable {
     let base: String
     let token: String
+    func callSocket() throws -> URLSessionWebSocketTask {
+        guard let url = URL(string: base), url.scheme == "https", url.host != nil,
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+              token.count >= 32,
+              var components = URLComponents(url: url.appendingPathComponent("v1/call/realtime"), resolvingAgainstBaseURL: false) else { throw ConnectionError.setup }
+        components.scheme = "wss"
+        guard let endpoint = components.url else { throw ConnectionError.setup }
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let task = URLSession.shared.webSocketTask(with: request)
+        task.maximumMessageSize = 100_000
+        return task
+    }
     func request<T: Decodable>(_ path: String, body: Data? = nil, method: String? = nil, timeout: TimeInterval = 180) async throws -> T {
         guard let url = URL(string: base), url.scheme == "https", url.host != nil,
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
