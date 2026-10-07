@@ -32,7 +32,7 @@ jobs:
   preview:
     if: github.event.repository.private == false
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - run: brew install xcodegen
