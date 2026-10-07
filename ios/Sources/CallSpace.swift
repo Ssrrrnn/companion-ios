@@ -104,7 +104,7 @@ final class CallSpace: NSObject, ObservableObject {
         NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification).sink { [weak self] _ in Task { @MainActor in
             guard self?.active == true else { return }; self?.end(); self?.error = "通话被系统声音打断，记录已保留。"
         } }.store(in: &subscriptions)
-        NotificationCenter.default.publisher(for: AVAudioEngine.configurationChangeNotification, object: engine).sink { [weak self] _ in Task { @MainActor in
+        NotificationCenter.default.publisher(for: .AVAudioEngineConfigurationChange, object: engine).sink { [weak self] _ in Task { @MainActor in
             guard let self, self.active, !self.previewing, self.socket != nil, !self.engine.isRunning else { return }
             self.end(); self.error = "音频设备发生变化，通话记录已保留，请重拨。"
         } }.store(in: &subscriptions)
